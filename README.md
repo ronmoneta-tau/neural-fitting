@@ -9,7 +9,6 @@
 
 # Neural Bloch-McConnell Fitting (NBMF)
 *Quantitative molecular imaging extracts biophysical parameter maps by solving physics-based inverse problems. We employ AI-driven methods to address the challenges of dynamic complexity and ill-posedness, enabling rapid and robust estimation scaled to millions of brain voxels.*
-<span style="color:red">Robustness</span>
 ## 
 This repository shares the methods described in our work **"Multi-Parameter Molecular MRI Quantification using Physics-Informed Self-Supervised Learning"**, presented in ISMRM24' ([abstract](https://archive.ismrm.org/2024/4478.html)) and accepted for publication in Nature Communications Physics. Also available as a preprint on Arxiv as [abstract](https://arxiv.org/abs/2411.06447), [html full-text](https://arxiv.org/html/2411.06447), [pdf full-text](https://arxiv.org/pdf/2411.06447). 
 
