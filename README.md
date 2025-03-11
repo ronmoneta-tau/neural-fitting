@@ -1,1 +1,2 @@
-# neural-fitting
+# nbmf
+Neural Bloch-McConnel Fitting
