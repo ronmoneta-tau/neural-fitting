@@ -366,3 +366,51 @@ def simple_infer_wrap(ds, nn_predictor, simulation_mode='expm_bmmat', visualize=
         plt.xlabel('signal pred/meas RRMSE (%)')
     
     return tissue_params, nn_pred_signal_normed_np, nsignal_error
+
+    
+def VBMF_MT_run(brain2train_mt, dirname='vbmf', mt_steps=None, slices2plot=None):
+    run_dirname = os.path.join(dirname, time.strftime('%B%d_%H%M')) 
+    if not os.path.exists(run_dirname):
+        os.makedirs(run_dirname)
+    logger = get_logger(f'{dirname}/log.log')        
+        
+    infer.infer_config = pipeline_config.infer_config
+    train.train_config = pipeline_config.train_config
+    train.train_config.tp_noise = False  
+    train.train_config.use_shuffled_sampler = False
+    train.train_config.patience = pipeline_config.mt_patience
+    mt_steps = mt_steps or pipeline_config.mt_steps
+    
+    if False:
+        # Solved some issue when trying to VBMF the CEST (still didn't get good results);
+        #  not needed for MT but leaving for the case one want to try for CEST again.
+        jax.config.update("jax_enable_x64", True)
+    
+    mt_lr = 1e-2
+    t0 = time.time()        
+    # brain2train_mt.slw = np.min([pipeline_config.mt_train_slw, brain2train_mt.shape[1]])
+    model_state, loss_trend_mt, net_kwargs = \
+        train.train(brain2train_mt, model_state=None, pool2predict='c', logger=None,                                
+                    mode='bloch_fitting', simulation_mode='isar2_c', steps=mt_steps, lr=mt_lr)
+    logger.info(f"T(VBMF)={time.time()-t0}sec")
+    # To evaluate, we set the fitted values as "ground truth" on a copy dataset
+    brain2test_mt = copy.deepcopy(brain2train_mt)    
+    train.bmfit_set_gt_from_model_state(brain2test_mt, model_state)  
+    mt_tissue_param_est, _mt_reconstructed_signal = infer.infer(
+        brain2test_mt, pool2predict='bc', 
+        nn_predictor=None, simulation_mode='isar2_c', do_forward=True
+        )  
+
+    brain2test_amide = None; amide_tissue_param_est = _amide_reconstructed_signal = None
+    transfer_res = (brain2test_mt, mt_tissue_param_est, _mt_reconstructed_signal, \
+                    brain2test_amide, amide_tissue_param_est, _amide_reconstructed_signal)
+        
+    err_mt, err_amide = plot_slice_rows_wrapper(
+        transfer_res, slices=slices2plot, mt_fig_name=run_dirname+'/mt_VBMF.png'
+        )
+    np.savez_compressed(run_dirname+'/err', err_mt_train=err_mt, mt_tissue_param_est=mt_tissue_param_est)
+    return mt_tissue_param_est, err_mt
+
+if __name__ == "__main__":
+    VBMF_MT_run()
+    # mt_repeated_run()  
