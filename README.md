@@ -1,5 +1,6 @@
+[![arXiv](https://img.shields.io/badge/arXiv-2411.06447-B31B1B.svg)](https://arxiv.org/abs/2411.06447)
 </div>
-【<a href='https://github.com/falex-aimri' target='_blank'>Alex Finkelstein</a> |
+<a href='https://github.com/falex-aimri' target='_blank'>Alex Finkelstein</a> |
 <a href='https://github.com/vnikale' target='_blank'>Nikita Vladimirov</a> |
 <a href='https://github.com/cest-sources' target='_blank'>Moritz Zaiss</a> |
 <a href='https://github.com/operlman' target='_blank'>Or Perlman</a>】
