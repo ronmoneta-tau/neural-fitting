@@ -16,10 +16,10 @@ class InferConfig:
     # Interpret net outputs as k_ab, k_ba ->f=ka/kb)
     predict_k_k: bool = True       
         
-    # Auxiliary inputs to the NN predictor
-    # TODO make it a net object property saved onto the checkpoint for consistency...
+    # Auxiliary inputs to the NN predictor    
     use_b1_aux_input: bool = True
     use_b0_aux_input: bool = False
+    
     # Give the NN predictor an auxiliary input of MT "ground truth" tissue params
     # (typically set to the estimates from MT protocol in previous stage )
     # (!) set to True for CEST
@@ -41,13 +41,11 @@ class InferConfig:
     fc_scale_fact: float = 0.3
     kc_scale_fact: float = 100
     
-
 infer_config = InferConfig()
 
 
 def nn_predict_tissue_params(nn_predict_func, measured_normed_T, w_dict, R_dict, forward_config=None, subkey=None):
-    """ Note side-effect on w_dict, R_dict in case the "fixes" are enabled.
-        TODO consider merging into tissue_params
+    """ Note side-effect on w_dict, R_dict in case the "fixes" are enabled.        
     """
     forward_config = forward_config or infer_config
     nn_input = measured_normed_T + 0.0 
@@ -91,8 +89,7 @@ def nn_predict_tissue_params(nn_predict_func, measured_normed_T, w_dict, R_dict,
     # -------- Extracting the "learned noise covariance" from net predictions --------
     cov_attenuation_fac = 1.   
     theta = jnp.pi * (output[0,:,:,:,7] - 0.5)  # sigmoid [0,1] --> [-pi/2, +pi/2]
-    s12 = output[0,:,:,:,8:10] * cov_attenuation_fac        
-    # TODO organize; a bit messy here - we in fact are just using 3 outputs, a,b,theta. 
+    s12 = output[0,:,:,:,8:10] * cov_attenuation_fac            
     brshape = output.shape[1:-1]
     
     # Rotation matrix with theta
@@ -127,9 +124,8 @@ def nn_predict_tissue_params(nn_predict_func, measured_normed_T, w_dict, R_dict,
         pred_tissue_params['df_b'] = dfk[..., 0, 0] * forward_config.fb_scale_fact 
         pred_tissue_params['dk_ba'] = dfk[..., 1, 0] * forward_config.kb_scale_fact 
         pred_tissue_params['df_c'] = dfk[..., 0, 0] * forward_config.fc_scale_fact 
-        pred_tissue_params['dk_ca'] = dfk[..., 1, 0] * forward_config.kc_scale_fact 
-        
-        # TODO - currently if b,c predicted simulataneously, we have a problem with correlated noises    
+        pred_tissue_params['dk_ca'] = dfk[..., 1, 0] * forward_config.kc_scale_fact         
+        # Note: when upgrading to predict b,c simulataneously, will need to separate noise generation
     # ---------------
 
     pred_tissue_params.update({'kb_T': k_ba, 'fb_T': f_b}) 
@@ -148,7 +144,8 @@ def nn_predict_tissue_params(nn_predict_func, measured_normed_T, w_dict, R_dict,
     return pred_tissue_params, misc_nn_updates
 
 
-# TODO try JIT this for further acceleration of inference!
+# Note: for massive applications of forward inference alone (e.g., large dictionary generation),
+# consider to JIT this for further acceleration. For training, covered by JIT of training_step.
 # @partial(jax.jit, static_argnames=['simulation_mode']) 
 def physical_model(
         tissue_params, w_dict, wrf_T, tr_tsat, simulation_mode='isar2_b', 
@@ -157,7 +154,7 @@ def physical_model(
         ):
     ''' simulation_mode:  isar2_(b|c), expm_bmmat, eigen_bmmat(deprecated)
         seq_mode:  sequential vs. parallel (using measurements, only used in training)
-        TODO assert that normalization is "/=first" in parallel mode..
+        Note: parallel mode assumes normalization by M0
     '''        
     tr_tsat = np.array(tr_tsat).reshape(-1, 2)
     if simulation_mode.startswith('isar2'):
@@ -188,9 +185,7 @@ def physical_model(
                 tissue_params, w_dict, wrf_T, 
                 TRs=tr_tsat[:,0], TSATs=tr_tsat[:,1],
                 mode=seq_mode, Z_acq_meas=measured_normed_T,
-            ) 
-    #print('normtype: ', data.SlicesFeed.norm_type)  # TMP!DEBUG
-    #import ipdb; ipdb.set_trace()
+            )     
     normalizer = normalizer or data.SlicesFeed.normalize_jax
     predicted_signal_normed_T = normalizer(predicted_signal_T)
     return predicted_signal_normed_T
@@ -213,7 +208,9 @@ def infer(brain_ds, forward_config=None, do_forward=True, nn_predictor=None,
     b0_dl = torch.utils.data.DataLoader(brain_ds, sampler=range(0, brain_ds.R1a_V.shape[1], brain_ds.slw))
     tissue_params_pred_full = {}    
     
-    assert brain_ds.ds == 1  # TODO support downsampled here?
+    # We want to infer all voxels so no downsampling; 
+    # if single-slice still doesn't fit in memory, need to use part-slice, see some stubs in data.py
+    assert brain_ds.ds == 1
     
     with tqdm.tqdm(total=len(b0_dl)) as pbar:
         for sli, data_entry in enumerate(b0_dl):                
@@ -290,7 +287,7 @@ def construct_large_dictionary():
     for shard in range(int(np.ceil(total_slices/shard_size))):  
         t0 = time.time()
         bsf_lhsynth_mt = data.SlicesFeed.make_cartesian_sample(
-            mt_or_amide='amide',  # TODO also do the smaller MT
+            mt_or_amide='amide',
             parameter_values_od=data.perlman2022_cartesian,
             #shape=(100, 600, 90)
             shape=(100, 8778, 90),

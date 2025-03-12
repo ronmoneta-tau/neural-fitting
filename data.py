@@ -17,9 +17,8 @@ import pyDOE
 
 
 gamma = 42.58 * 2*np.pi * 1e6   # gamma' = 42.58 MHz/T
-#B0_base_DEF = 2.89 
 B0_base_DEF = 3.  # TESLA
-wc_ppm_DEF = 0    # MT  (TODO should be -2?)
+wc_ppm_DEF = 0    # MT  
 wb_ppm_DEF = 3.5  # amide
 T2b_ms_DEF = 40
 # MT: 10us w Superlorentzian shape approximated by 40us Lorentzian (Zaiss2022, Perlman2022)
@@ -40,8 +39,8 @@ def_ranges4LHS = collections.OrderedDict({\
 def_grids4cartesian = collections.OrderedDict({
     'T1a_ms': np.arange(700, 3000+100, 100),
     'T2a_ms': np.concatenate((np.arange(30, 150+10, 10), np.arange(200, 1000+100, 100))),
-    'B0_shift_ppm_map': [0.],  # np.arange(-1, 1+.2, 0.2),  # vol7stats
-    'B1_fix_factor_map': [1.], # np.arange(0.8, 1.2+.1, .1),
+    'B0_shift_ppm_map': [0.],  
+    'B1_fix_factor_map': [1.], 
     'fb_gt_T': [0.],
     'kb_gt_T': [0.],
     'fc_gt_T': np.arange(0.01, 0.3+.01, 0.01),
@@ -50,18 +49,16 @@ def_grids4cartesian = collections.OrderedDict({
 
 # The 79M dict
 perlman2022_cartesian = collections.OrderedDict({
-    'T1a_ms': np.concatenate((np.arange(800, 2000+200, 200), np.array([2400, 3000]))),
-    #'T1a_ms': np.concatenate((np.arange(800, 3000+100, 100))), # more detailed, used for MT
+    'T1a_ms': np.concatenate((np.arange(800, 2000+200, 200), np.array([2400, 3000]))),    
     'T2a_ms': np.arange(50, 150+10, 10),
     'B0_shift_ppm_map': np.arange(-0.3, 0.3+0.1, 0.1),
     'B1_fix_factor_map': np.array([1.,]),
     'fb_gt_T': np.arange(100, 1000+50, 50)/110e3,  # mM->fraction
-    'kb_gt_T': np.arange(5, 100+5, 5),  # TODO doesn't cover the (true?) 200-300 range...
+    'kb_gt_T': np.arange(5, 100+5, 5),
     'fc_gt_T': np.arange(0.02, 0.3+.02, 0.02),
     'kc_gt_T': np.arange(5, 100+5, 5)
 })           
 # https://static-content.springer.com/esm/art%3A10.1038%2Fs41551-021-00809-7/MediaObjects/41551_2021_809_MOESM1_ESM.pdf
-# Supplementary Table 1 (# TODO is solute T2 1ms there or is it a typo?)
 
 
 def get_w1_wrf(B1, wrf_diff_Hz, B0_base=B0_base_DEF, verbose=False):    
@@ -83,23 +80,19 @@ def get_w_abc(B0_base=B0_base_DEF, B0_shift_ppm=0, wb_ppm=wb_ppm_DEF, wc_ppm=wc_
     return wa, wb, wc
 
 
-def get_seq(mt_seq_txt_fname = 'data/52_MT_with_M0_3T_.txt', #'/data/protocols_dicts/52_MT_with_M0_3T_.txt',
-            larg_seq_txt_fname = 'data/51_L_arg_with_M0_3T.txt', #'/data/phantoms/matlab_tubingen_phantom_nov_30_2020_to_alex/generate_dictionaries_code/SeqCreation/schedules/51_L_arg_with_M0_3T.txt',
+def get_seq(mt_seq_txt_fname = 'data/52_MT_with_M0_3T_.txt', 
+            larg_seq_txt_fname = 'data/51_L_arg_with_M0_3T.txt',
             drop_first=False 
     ):
-    
-    colnames = ['TR_ms', 'B1_uT', 'dwRF_Hz', 'FA', 'Tsat_ms']
-    #seq_df_MT = pd.read_csv(mt_seq_txt_fname, sep='\s+')
+    colnames = ['TR_ms', 'B1_uT', 'dwRF_Hz', 'FA', 'Tsat_ms']    
     seq_df_MT = pd.read_csv(mt_seq_txt_fname, skiprows=1, sep='\s+', names=colnames)
     seq_df_MT['dwRF_Hz'] *= -1  # "right" is "negative ppm" by convention
 
-    seq_df_LARG = pd.read_csv(larg_seq_txt_fname, skiprows=1, sep='\s+', names=colnames) #['TR', 'B1_uT', 'dwRF_Hz', 'fa', 'Tsat']) # phantom notebook compat?    
-    # TODO put amide-specific sequence near the data. Organize, create SEPARATE CSV for L-arg and Amide.        
+    seq_df_LARG = pd.read_csv(larg_seq_txt_fname, skiprows=1, sep='\s+', names=colnames) 
     seq_df_AMIDE = pd.read_csv(larg_seq_txt_fname, skiprows=1, sep='\s+', names=colnames)    
     LARG_TO_AMIDE = 3.5/3
     seq_df_AMIDE['dwRF_Hz'] *= LARG_TO_AMIDE  # !!!
-    
-    # seq_df_AMIDE.columns = seq_df_MT.columns
+        
     if drop_first:        
         return {'mt': seq_df_MT[1:], 'amide': seq_df_AMIDE[1:], 'larg': seq_df_LARG[1:]}
     else:
@@ -134,122 +127,9 @@ def decode_data_entry(data_entry, detorch=True):
     roi_mask_nans_T = roi_mask_nans_T[0].detach().numpy() if detorch else roi_mask_nans_T[0]
     measured_normed_T = measured_normed_T[0].detach().numpy() if detorch else measured_normed_T[0]
     for di in [w_dict, R_dict, gt_dict]:
-        di.update({k: (v[0].detach().numpy()*roi_mask_nans_T if detorch else v[0]) for k, v in di.items()})
-        #di.update({k: v[0]*roi_mask_nans_T for k, v in di.items()})
+        di.update({k: (v[0].detach().numpy()*roi_mask_nans_T if detorch else v[0]) for k, v in di.items()})        
         
     return roi_mask_nans_T, measured_normed_T, w_dict, R_dict, gt_dict
-
-    
-class Folder2Data:
-    
-    def __init__(self):
-        pass    
-
-    def load_erl(       
-        self, subject_folder, output_folder='mrf_output', raw_folder='', drop_first=False,
-        crop_bot=45, crop_top=95
-        ): 
-        """
-        Load the results of the matlab pipeline
-        """
-        self.subject_folder = subject_folder        
-        self.T1ms = sio.loadmat(subject_folder+f'/{raw_folder}/T1map.mat')['T1map'][:, crop_bot: crop_top, :]        
-        self.T2ms = sio.loadmat(subject_folder+f'/{raw_folder}/T2map.mat')['T2map'][:, crop_bot: crop_top, :] * 1000
-        self.dB0ppm = sio.loadmat(subject_folder+f'/{raw_folder}/dB0map.mat')['dB0map'][:, crop_bot: crop_top, :]
-        self.B1map = sio.loadmat(subject_folder+f'/{raw_folder}/B1map.mat')['B1map'][:, crop_bot: crop_top, :]
-        self.MT_data_full = sio.loadmat(subject_folder+f'/{raw_folder}/MT.mat')['mt_mat'].transpose([3,0,1,2])        
-        self.MT_data = self.MT_data_full[1:, :, crop_bot: crop_top, :] if drop_first \
-                else self.MT_data_full[:, :, crop_bot: crop_top, :]                       
-        self.AMIDE_data_full = sio.loadmat(subject_folder+f'/{raw_folder}/AMIDE.mat')['am_mat'].transpose([3,0,1,2])
-        self.AMIDE_data = self.AMIDE_data_full[1:, :, crop_bot: crop_top, :] if drop_first \
-                else self.AMIDE_data_full[:, :, crop_bot: crop_top, :]       
-        try:
-            self.mt_mrf_output = sio.loadmat(subject_folder+f'/{output_folder}/MT_maps.mat')
-            self.amide_mrf_output = sio.loadmat(subject_folder+f'/{output_folder}/AMIDE_maps.mat')
-            self.fss_gt = self.mt_mrf_output['M0ss'][:, crop_bot: crop_top, :] # /100            
-            self.kss_gt = self.mt_mrf_output['Kssw'][:, crop_bot: crop_top, :]         
-            self.f_amide_gt = self.amide_mrf_output['M0s'][:, crop_bot: crop_top, :] # /100
-            self.k_amide_gt = self.amide_mrf_output['Ksw'][:, crop_bot: crop_top, :]         
-        except:            
-            print("No reference extracted fss/kssw, amide fs/ksw maps")
-            self.fss_gt = self.kss_gt = self.f_amide_gt = self.k_amide_gt = np.zeros(self.T1ms.shape)            
-        try:
-            brainmask = sio.loadmat(subject_folder+f'/{raw_folder}/BRAINMASK.mat')
-            self.white_and_gray = brainmask['c2_nii'][:, :, :] + brainmask['c1_nii'][:, :, :]     
-            self.white_and_gray = self.white_and_gray[:, crop_bot: crop_top, :]
-            
-            self.WM_GM_CSF = brainmask['c2_nii'][:, :, :] + brainmask['c1_nii'][:, :, :] + brainmask['c3_nii'][:, :, :]        
-            self.WM_GM_CSF = self.WM_GM_CSF[:, crop_bot: crop_top, :]
-
-            self.gray = brainmask['c1_nii'][:,crop_bot:crop_top,:]
-            self.white = brainmask['c2_nii'][:,crop_bot:crop_top,:]
-            self.gray[self.gray<0.21] = np.nan
-            self.white[self.white<0.2] = np.nan
-
-        except:
-            print("No masks " )
-        self.create_mask()
-        print(self)
-        return self
-    
-    def __str__(self):
-        res = ""
-        for x,y in self.__dict__.items():
-            try:
-                res += f"{x}: {y.shape}\n"
-            except:
-                pass
-        return res
-    
-    def create_mask(self, use_fss=True):
-        if hasattr(self, 'WM_GM_CSF'):
-            print('Best scenario: setting mask acccording to available gray+white+CSF segmentation..')
-            #self.roi_mask_zeros = np.float32(self.white_and_gray > 0.1)
-            self.roi_mask_zeros = np.float32(self.WM_GM_CSF > 0.8)  # May16: was 0.5
-        elif use_fss: #  and self.fss_gt.shape == self.T1ms.shape:        
-            # TODO consider a smarter CSF removal (& w.o. oracle usage). 
-            #self.roi_mask_zeros = np.logical_and(np.logical_and(self.fss_gt > 0.03, self.T1ms<2100), self.T2ms<200)  
-            print("setting mask using the Fss oracle - convenient way to remove CSF")
-            self.roi_mask_zeros = self.fss_gt > 0.01
-            self.roi_mask_zeros = np.float32(np.logical_and(self.roi_mask_zeros, ~np.isnan(self.B1map)))
-        else:
-            print("w.o. masks or ss-oracle, use T1, T2 brackets to get WM+GM")
-            self.roi_mask_zeros = np.logical_and(self.T1ms<40000, self.T2ms<4000) # disable..
-            self.roi_mask_zeros = np.logical_and(self.roi_mask_zeros, self.T1ms>1)
-            self.roi_mask_zeros = np.logical_and(self.roi_mask_zeros, self.T2ms>1)
-            self.roi_mask_zeros = np.float32(self.roi_mask_zeros)
-
-        self.roi_mask_nans = np.copy(self.roi_mask_zeros)
-        self.roi_mask_nans[self.roi_mask_nans==0] = np.nan   
-        
-
-def dicoms2data(data_path, folder, xcrop=[0, -1], ycrop=[0, -1], Nmin=0, Nmax=-1, drop_first=True):
-    dicoms_paths = natsorted(glob(os.path.join(data_path, folder, '*.dcm')))
-    dicoms = [dcmread(dcm) for dcm in dicoms_paths]
-
-    def reshape_image(test):
-        num_x, num_y = 10, 10
-        dim_x, dim_y = test.shape[0]//num_x, test.shape[1]//num_y
-        reshaped_images = []
-        # Split the large image into smaller images
-        for i in range(num_x):
-            for j in range(num_y):
-                small_image = test[i*dim_x:(i+1)*dim_x, j*dim_y:(j+1)*dim_y]
-                reshaped_images.append(small_image)
-
-        reshaped_images = np.array(reshaped_images)
-        return reshaped_images
-
-    reshaped_images = np.array(reshape_image(dicoms[1].pixel_array))
-    
-    print('overall shape: ', np.array([reshape_image(x.pixel_array) for x in dicoms])[1:,...].shape)
-
-    ## !! ===== dicom to data  ====== !! 
-    data = [reshape_image(x.pixel_array)[xcrop[0]: xcrop[1], Nmin: Nmax, ycrop[0]: ycrop[1]] for x in dicoms]  #newdata
-    if drop_first:
-        return np.array(data)[1:,...]
-    else:
-        return np.array(data)
     
     
 class SlicesFeed(torch.utils.data.Dataset):
@@ -261,7 +141,7 @@ class SlicesFeed(torch.utils.data.Dataset):
     ds = 1             # downsampling ratio
     slw = 10           # slab width            
     downsample_or_slab = True  # otherwise, will cut slabs instead of downsampling. 
-    random_ds = True           # otherwise, will scan slab/downsample offsets sequentially. TODO: prevent sync with slices scan. 
+    random_ds = True           # otherwise, will scan slab/downsample offsets sequentially.
     xo_state = 0
     yo_state = 0
 
@@ -279,7 +159,6 @@ class SlicesFeed(torch.utils.data.Dataset):
             The "ground truth" parameters are only used in pure forward-simulation flows (no fitting/training), e.g., synthetic data generation
         """
         data4nbmf = cls()        
-        # shape = data4nbmf.shape = signal.shape[1:]
         data4nbmf.shape = shape
         data4nbmf.slw = min(data4nbmf.slw, data4nbmf.shape[1])    
         if type(seq_df) == type(None):
@@ -355,8 +234,7 @@ class SlicesFeed(torch.utils.data.Dataset):
             parameter_values_od = def_grids4cartesian
         grids = np.meshgrid(*parameter_values_od.values(), indexing='ij')
         print(grids[0].shape)
-        
-        #tp_d = {name: grid.ravel().reshape(shape) for name, grid in zip(parameter_values_od.keys(), grids)}
+
         tp_d = {name: grid.ravel().reshape([shape[0], -1, shape[2]])[:, slices[0]:slices[1],:]    # [:, :shape[1],:] 
                 for name, grid in zip(parameter_values_od.keys(), grids)
                 }
@@ -368,8 +246,6 @@ class SlicesFeed(torch.utils.data.Dataset):
         """Loading dictionary created using Vladimirov2024's code
         """
         nvdict = np.load('mtd.npz', fix_imports=True, allow_pickle=True)['arr_0'].item()
-        #nvdict['sig'] = nvdict['sig'] / np.linalg.norm(nvdict['sig'], axis=1)[-1, None]        
-         # nvdict['sig'].reshape(31, *shape).shape
         bsf_lhsynth_mt = cls.from_args(
             mt_or_amide='mt',
             shape=shape, 
@@ -402,26 +278,7 @@ class SlicesFeed(torch.utils.data.Dataset):
             B0_shift_ppm_map=brxarray['B0_shift_ppm_map'].values,
             B1_fix_factor_map=brxarray['B1_fix_factor_map'].values,
             **kwargs
-        )
-        
-    @classmethod
-    def from_cestmrf_folder(cls, subject_folder, mt_or_amide, **kwargs):
-        """ Load data from a our matlab pipeline-processed folder
-        """
-        f2d = Folder2Data().load_erl(subject_folder)
-        if mt_or_amide == 'mt':
-            signal = f2d.MT_data            
-        elif mt_or_amide == 'amide':
-            signal = f2d.AMIDE_data            
-        return cls.from_args(
-            mt_or_amide=mt_or_amide, 
-            shape=f2d.T1ms.shape,
-            signal=signal, 
-            roi_mask_nans=f2d.roi_mask_nans,
-            T1a_ms=f2d.T1ms, T2a_ms=f2d.T2ms,
-            B0_shift_ppm_map=f2d.dB0ppm, B1_fix_factor_map=f2d.B1map, 
-            **kwargs
-        )
+        )        
     
     @classmethod
     def normalize(cls, signal, norm_type=None):        
@@ -456,24 +313,19 @@ class SlicesFeed(torch.utils.data.Dataset):
         return signal_normed
     
     def __len__(self):
-        return self.R1a_V.shape[1]  # slices (TODO account for slw, ds)
+        return self.R1a_V.shape[1]
     
     def __getitem__(self, idx):
         """ get a SLAB of <self.slw> slices starting at slice #idx, 
             downsampled (by sampling or cutout) by stride <self.ds> in each of X, Y
-
-            TODO fully scan the X,Y sampling-grids/cuts before moving in Z direction, for a proper scan. 
-                 (need to interpret idx as running to (slices * ds^2) )
         """
         z0 = idx
         slw = self.slw
         ds = self.ds
         shape = self.R1a_V.shape      
         if self.random_ds:  
-            xo, yo, zo = np.random.choice(ds, 3)  
-        # TODO use zo+z0 zo for case of ds>1 slw>1?
-        else:
-            # self.ds_type == 'cube_scan':
+            xo, yo, zo = np.random.choice(ds, 3)          
+        else:            
             self.xo_state += 1            
             if self.xo_state == ds:
                 self.xo_state = 0
@@ -503,11 +355,8 @@ class SlicesFeed(torch.utils.data.Dataset):
             }
         measured_normed_T = self.measured_normed_T[:, xo:xe:ds, z0:z0+slw:, yo:ye:ds]
         
-        # TODO optionally move noise adding into train so to ask network to reconstruct the clean signal
-        if self.add_noise_to_signal != 0:
-            #measured_normed_T = measured_normed_T + self.add_noise_to_signal * (np.random.random(measured_normed_T.shape) - 0.5)
-            measured_normed_T = measured_normed_T + self.add_noise_to_signal * np.random.randn(*measured_normed_T.shape)
-            # measured_normed_T /= np.linalg.norm(measured_normed_T, axis=0) 
+        if self.add_noise_to_signal != 0:            
+            measured_normed_T = measured_normed_T + self.add_noise_to_signal * np.random.randn(*measured_normed_T.shape)            
             measured_normed_T = self.normalize(measured_normed_T)
             
         roi_mask_nans_T = self.roi_mask_nans[xo:xe:ds, z0:z0+slw:ds, yo:ye:ds]

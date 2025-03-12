@@ -77,7 +77,7 @@ def bmfit_activate_tp(tissue_params):
 
     
 def bmfit_set_gt_from_model_state(brainds, model_state):
-    """ TODO use the above activate() for explicit consistency"""
+    """ ..some redunancy to the above, need to merge.."""
     brainds.fb_gt_T = np.array(jax.nn.sigmoid(np.array(model_state.params['fb_T']))) * infer.infer_config.fb_scale_fact
     brainds.kb_gt_T = np.array(jax.nn.sigmoid(np.array(model_state.params['kb_T']))) * infer.infer_config.kb_scale_fact
     brainds.fc_gt_T = np.array(jax.nn.sigmoid(np.array(model_state.params['fc_T']))) * infer.infer_config.fc_scale_fact
@@ -96,9 +96,8 @@ def infer_round_trip_calc_loss(params, nn_predictor, data_entry, wrf_T=None,
     
     if mode in ('bloch_fitting',):        
         slab_tissue_params = {k: jax.lax.dynamic_slice(v, slab_apex, slab_shape) for k, v in params.items()}
-            # Note the potentially surprising behavior for the case where the requested slice overruns the bounds of the array; 
-            # in this case the start index is adjusted to return a slice of the requested size:
-        # import ipdb; ipdb.set_trace() # print('goo')
+        # Note the potentially surprising behavior for the case where the requested slice overruns the bounds of the array; 
+        # in this case the start index is adjusted to return a slice of the requested size:        
         tissue_params, misc_nn_updates = slab_tissue_params, {}
         bmfit_activate_tp(tissue_params)        
     else:
@@ -110,9 +109,8 @@ def infer_round_trip_calc_loss(params, nn_predictor, data_entry, wrf_T=None,
     
     tissue_params.update(R_dict)
     
-    # TODO consider merging into infer.nn_predict_tissue_params
-    if infer.infer_config.use_pred_T2_fix:
-        # R_dict['R2a_T'] = R_dict['R2a_T'] * res['R2a_fix']    
+    # if reviving this experimental feature, consider merging into infer.nn_predict_tissue_params
+    if infer.infer_config.use_pred_T2_fix:      
         tissue_params['R2a_T'] = tissue_params['R2a_T'] * tissue_params['R2a_fix']
     if infer.infer_config.use_pred_R2c_fix:        
         tissue_params['R2c_T'] = tissue_params['R2c_T'] * tissue_params['R2c_fix']
@@ -192,18 +190,9 @@ def infer_round_trip_calc_loss(params, nn_predictor, data_entry, wrf_T=None,
     
     return loss_total, (est_error, tissue_params, misc_nn_updates)
 
-
-# if tv_loss_fac > 0:
-#             loss_tv_f += jnp.nanmean(jnp.abs(tissue_params['fb_T'][1:,:,:] - tissue_params['fb_T'][:-1,:,:])) + \
-#                          jnp.nanmean(jnp.abs(tissue_params['kb_T'][:,:,1:] - tissue_params['kb_T'][:,:,:-1]))   
-#                 # TODO should be pre-scaling
-# if tv_loss_fac > 0:
-#     loss_tv_f += jnp.nanmean(jnp.abs(tissue_params['fc_T'][1:,:,:] - tissue_params['fc_T'][:-1,:,:])) + \
-#                     jnp.nanmean(jnp.abs(tissue_params['kc_T'][:,:,1:] - tissue_params['kc_T'][:,:,:-1]))  
-
-                            
+                       
 def infer_calc_loss_wrapped(model_state, params, batch, train=True, **kwargs):
-    def nn_predictor(_batch): # TODO maybe simplify and push inside infer_round_trip_calc_loss
+    def nn_predictor(_batch): # perhaps can be simplified & pushed inside infer_round_trip_calc_loss?
         outs = model_state.apply_fn({'params': params, 'batch_stats': model_state.batch_stats},
                                     _batch, train=train, mutable=['batch_stats'] if train else False
                                     )        
@@ -250,9 +239,7 @@ class MyEarlyStopping:
         self.should_stop=False
         
     def update(self, metric):        
-        self.new_best = (metric < self.best_value)
-            
-        # if np.abs(metric - self.best_value) < self.min_delta:
+        self.new_best = (metric < self.best_value)                    
         diff_vs_best = metric - self.best_value
         if diff_vs_best < self.min_delta and diff_vs_best > -0.01:
             # ! looking for multiple epochs around (above or very slightly below) the best value..
@@ -281,27 +268,23 @@ def train(
         #  (vs. ds=1, slw=10, our standard for 2-pool isar2)
         brain_ds.ds = 2  
         brain_ds.slw = 1  
-        # TODO re-expose as config..
+        # consider exposing in train_config (currently handled as config at the higher-level pipelines module)
 
     if mode == 'bloch_fitting':
-        apply_fn = batch_stats = None                
-        fb_var = 0*jnp.ones(brain_ds.shape) # TODO randomize? zeros for sigmoid 
+        apply_fn = batch_stats = None       
+        # NOTE: initializing to  mid-range, consider random and/or externally exposed.
+        fb_var = 0*jnp.ones(brain_ds.shape) 
         kb_var = 0*jnp.ones(brain_ds.shape) # or cheat: brain_ds.kb_gt_T.numpy())
         fc_var = 0*jnp.ones(brain_ds.shape) 
         kc_var = 0*jnp.ones(brain_ds.shape) 
         params = {'fb_T': fb_var, 'kb_T': kb_var, 'fc_T': fc_var, 'kc_T': kc_var}
-        if False:  # ! cheat and start from ground truth
-            params = {'fb_T': jnp.array(brain_ds.fb_gt_T),
-                      'kb_T': jnp.array(brain_ds.kb_gt_T), 
-                      'fc_T': jnp.array(brain_ds.fc_gt_T), 
-                      'kc_T': jnp.array(brain_ds.kc_gt_T)}
         brain_ds.downsample_or_slab = False  # slab not downsample
         net_kwargs = {}
     else:
         T1_aux_input = T2_aux_input = 1
         extra_inputs = T1_aux_input + T2_aux_input + infer.infer_config.use_b0_aux_input + infer.infer_config.use_b1_aux_input
         if (pool2predict=='b' and infer.infer_config.use_cfsskss_inp):
-            extra_inputs += 2  #  fc,kc (as estimated are also fed as auxiliary inputs)
+            extra_inputs += 2  #  fc,kc as estimated are also fed as auxiliary inputs
         net_kwargs = {
             'input_shape': list(brain_ds.batch_shape), 
             'mrf_len': brain_ds.seq_len,
@@ -311,7 +294,7 @@ def train(
             'extra_inputs': extra_inputs
         }
         if model_state == None:                    
-            nnmodel, nnparams = net.get_net(**net_kwargs)  # input_shape=list(brain_ds.batch_shape), hidden_width=hidden_width, extra_inputs=extra_inputs)
+            nnmodel, nnparams = net.get_net(**net_kwargs)
             apply_fn = nnmodel.apply
             batch_stats = nnparams['batch_stats']
             params = nnparams['params']
@@ -324,8 +307,7 @@ def train(
     epochs = steps // steps_per_epoch
     print(f"epochs = {epochs}")
     print(f"effective epochs = {epochs // (brain_ds.ds**2)}")
-        
-    # TODO retry with simple flat schedule (or reducing on plateau)
+            
     epochs_per_decay = 10
     periods = epochs//epochs_per_decay
     cosine_restarts_lr_sched = optax.sgdr_schedule(
@@ -333,16 +315,13 @@ def train(
           "decay_steps": epochs_per_decay*steps_per_epoch,
           "warmup_steps":1, "end_value":1e-6}  # "warmup_steps":10
           for period in range(periods)]
-    )
-    
+    )    
     if train_config.cosine_schedule:
         lr2use = cosine_restarts_lr_sched
     else:
-        lr2use = lr  # just flat; TODO try also simple decay or reduce-on-plateau
-        
-    optimizer = optax.adamw(learning_rate=lr2use, weight_decay=train_config.weight_decay)  # optax.sgd
-    
-    # TODO is the weight_decay active at all?!?! value of 10 seems to have had no special impact    
+        lr2use = lr  # just flat; can also consider simple decay or reduce-on-plateau
+    # not clear if weight decay is in fact active..    
+    optimizer = optax.adamw(learning_rate=lr2use, weight_decay=train_config.weight_decay)  
     early_stop = MyEarlyStopping(min_delta=train_config.min_delta, patience=train_config.patience) 
         
     model_state = TrainState.create(apply_fn=apply_fn,
@@ -350,21 +329,17 @@ def train(
                                     batch_stats=batch_stats,
                                     tx=optimizer,
                                     )
-
     slcrop = 0  # little hook to ignore top/bottom "edges" if needed
 
-    def get_sampler(): #seed=None):
-        #seed = seed or int(time.time())
-        #np.random.seed(seed)
+    def get_sampler(): 
         if train_config.use_shuffled_sampler:        
-            sampler = np.random.choice(range(slcrop, len(brain_ds)-slcrop-brain_ds.slw+1), steps_per_epoch) #if sampler is None else sampler
+            sampler = np.random.choice(range(slcrop, len(brain_ds)-slcrop-brain_ds.slw+1), steps_per_epoch) 
         else:
             simplerange = np.arange(slcrop, len(brain_ds)-slcrop, brain_ds.slw)                    
-            sampler = simplerange #  if sampler is None else sampler    
+            sampler = simplerange    
         sampler = np.clip(sampler, slcrop, len(brain_ds)-slcrop-brain_ds.slw)  # overlap prev instead of cut
         return sampler            
-    
-    # b0_dl = torch.utils.data.DataLoader(brain_ds, sampler=sampler)
+        
     rngkey = jax.random.key(0)
     est_error_np_MA = np.nan
     last_est_error_np_perc = np.nan
@@ -380,8 +355,7 @@ def train(
                     data_entry_t = data.decode_data_entry(data_entry[:-1])
                     if mode == 'bloch_fitting':  
                         # adding the extra piece of data - the slab location - to enable trainable tissue params mode.
-                        (x0, y0, z0) = data_entry[-1]
-                        # assert brain_ds.ds == 1, "BM fit doesn't support downsampled data yet"
+                        (x0, y0, z0) = data_entry[-1]                        
                         slab_shape = (brain_ds.shape[0] // brain_ds.ds, brain_ds.slw, brain_ds.shape[2] // brain_ds.ds)
                         slab_apex = [a.numpy()[0] for a in (x0, z0, y0)] # ! note z is axial, middle dim
                         data_entry_t = list(data_entry_t) + [slab_apex] 
@@ -420,8 +394,6 @@ def train(
                     
                     if train_config.print_mean_TP:
                         mean_tp_hist.append({k: np.mean(tissue_params[k]) for k in ['fb_T', 'kb_T']})
-                        #for k,v in tissue_params.items():   # '+-', np.std(v)                                      
-                        #print([f'{k}={np.mean(tissue_params[k]):.3e}' for k in ['fb_T', 'kb_T']]) 
 
                 if epoch in range(0, epochs, int(np.ceil(epochs/20))): 
                     logger.info(str(pbar))

@@ -24,8 +24,7 @@ def myplot1(data, bcrop=0, tcrop=0, rotate=False, log_hist=False,
     return lims
 
 
-def viz_seq(seq_df):
-    # TODO also axis of ppm (along with Hz)
+def viz_seq(seq_df):    
     B1_uT_seq = seq_df['B1_uT'].tolist()
     dwRF_Hz_seq = seq_df['dwRF_Hz'].tolist()
     plt.figure(figsize=(10,2))
@@ -143,13 +142,6 @@ def explore_brain_masks(brainmask, sl=70):
     
 def phantom_get_geometry(data, centers, sl=5, radius=3, visualize=True):  
     _img = np.copy(data[3, :, sl, :])    
-    """
-       TODO non-integer centers and radius!! 
-       TODO automate centers+radius choice. 
-           - Hough transform not so good, but can try semi-auto, e.g. flood-fill from centers, also can morphologically remove boundary..
-           - Use DNN, e.g. SAM! or fine tuned
-       TODO consider upsampling, then better circle fit       
-    """
     rois_nan = []
     mask = np.zeros(_img.shape)
     for (x,y) in centers:    
@@ -164,8 +156,7 @@ def phantom_get_geometry(data, centers, sl=5, radius=3, visualize=True):
         f, (ax1, ax2, ax3, ax4) = plt.subplots(1, 4, figsize=(15, 3))
         ax1.imshow(_img, cmap='gray')
         ax2.imshow(_img*mask, cmap='gray')
-        ax3.imshow(_img*(1-mask), cmap='gray')
-        #plt.imshow()
+        ax3.imshow(_img*(1-mask), cmap='gray')        
         plt.sca(ax4)
         for (x,y) in centers:
             sig = data[:, x, sl, y] 
@@ -188,10 +179,8 @@ cmap_mgm.set_bad('black', 1.)
 def phantom_viz(
     ax, centers, data, radius=3, texts=None, vmax=None,
     cmap=cmap_vir, dx=-5, dy=-2, label='[L-arg] (mM)', do_colorbar=True
-    ): #, rois=None):
-    #  dx=-2.5, dy=-3.5
-    #rois = rois or [cv2.circle(np.full_like(data, np.nan), center, radius, 1, -1) for center in centers]  # TODO test    
-    texts = texts or 'ABCDEF' # ['A', 'B', 'C', 'D', 'E', 'F']
+    ): 
+    texts = texts or 'ABCDEF' 
     image = ax.imshow(data, cmap=cmap, vmin=0, vmax=vmax or np.nanmax(data)*1.2)
     ax.axis('off')
     if do_colorbar:
@@ -350,8 +339,7 @@ def larg_phantom_viz(
 
     plt.subplot(222)
     _img = np.zeros(fspred[:,sl,:].shape)       
-    pred_mM_means = []
-    #for (y,x), gt_mM in zip(centers, Larg_mM_GT):
+    pred_mM_means = []    
     for vi, ((y,x), gt_mM) in enumerate(zip(centers, Larg_mM_GT)):
         # print('gt_mM', gt_mM)
         _zeros = np.zeros(fspred[:,sl,:].shape, np.uint8)
@@ -366,15 +354,12 @@ def larg_phantom_viz(
     clabel='[L-arg] (mM)'  # , as prepared
     cbar=plt.colorbar(label=clabel, cax=cax)  
     cbar.set_label(clabel, fontsize=ylabel_fontsize)  
-    plt.axis('off')
-
-    # TODO why not do this too in 3D?
+    plt.axis('off')    
     mM_pred_slice_masked = (fspred_mM*nansmask)[:,sl,:]
     print('VOXELwise statistics (in central slide): ')
     print(f'fs corr: {get_corr(_img, mM_pred_slice_masked) :.2f}')  
     print(f'fs relative RMSE (%): {100*get_rmse(_img, mM_pred_slice_masked) :.1f}')    
-    print(f'fs RMSE (mM): {np.sqrt(np.nanmean((_img-mM_pred_slice_masked)**2)):.1f}')
-    # MAPE - relative abs (L1) error voxelwise, then averaged?
+    print(f'fs RMSE (mM): {np.sqrt(np.nanmean((_img-mM_pred_slice_masked)**2)):.1f}')    
     print(f'fs MAPE (%): {100*(np.nanmean(np.abs((_img-mM_pred_slice_masked)/(_img+1e-6)))):.1f}')
     print('VIALwise statistics: ')
     Larg_mM_GT = np.array(Larg_mM_GT)
@@ -384,18 +369,13 @@ def larg_phantom_viz(
         
     def exp_func(x, a, b, c):
         return a * np.exp(b * x) + c
-        # TUB quest fit gave: 2.13908777 1.02665966 56.0028085 
-        # note b=1 --> good fit to K as a linear func of [H+]=exp(pH)
-        # TODO: fit with b=1 forced?
 
-    plt.subplot(224)
-    #phexpfac = 3.1
+    plt.subplot(224)    
     _img = np.zeros(fspred[:,sl,:].shape)    
     Ksw_GT = Ksw_Hz_GT_QUESP if Ksw_Hz_GT_QUESP is not None else exp_func(PH, 2.1, 1., 56.)
     
     if Ksw_Hz_GT_QUESP is not None:
-        plt.title('GT pH, color: $k_{sw}$ (QUESP)', fontsize=16)
-        # for (y,x,r), gt_Hz, gt_Hz_std, gt_ph in zip(rois, Ksw_Hz_GT_QUESP, Ksw_Hz_GT_QUESP_std, PH):        
+        plt.title('GT pH, color: $k_{sw}$ (QUESP)', fontsize=16)        
         for vi, ((y,x), gt_ph, gt_Hz, gt_Hz_std) in enumerate(zip(centers, PH, Ksw_Hz_GT_QUESP, Ksw_Hz_GT_QUESP_std)): 
             _zeros = np.zeros(fspred[:,sl,:].shape, np.uint8)
             _img = _img + np.float32( cv2.circle(_zeros, (x, y), radius, 1., cv2.FILLED)) * gt_Hz 
@@ -413,11 +393,10 @@ def larg_phantom_viz(
             plt.text(x, y, f'pH\n{gt_ph}', color='k', fontweight='bold', fontsize=10, ha='center', va='center')
             plt.text(x+dx, y+dy, vial_labels[vi], color='white', fontsize=15, ha='center', va='center')
     _img[_img==0] = np.nan
-    
-    #plt.imshow(_img, cmap=cmap_mgm, vmin=0, vmax=ksvmax)
+        
     import matplotlib as mpl
     plt.imshow(_img, cmap=cmap_mgm, 
-               norm=mpl.colors.BoundaryNorm(np.arange(3.3,5.9,0.2), #[3, 3.75, 4.25, 4.75, 5.25, 6], 
+               norm=mpl.colors.BoundaryNorm(np.arange(3.3,5.9,0.2), 
                                             ncolors=cmap_mgm.N))
                              
     cax = plt.gca().inset_axes([1.05, 0, .05, 1])
@@ -445,8 +424,7 @@ def larg_phantom_viz(
 
     return figs, fs_pred_mM_by_roi, ks_pred_Hz_by_roi
     
-def upsample(_img, fname=None, factor=3, viz=True): 
-    """ TODO """ 
+def upsample(_img, fname=None, factor=3, viz=True):     
     _img = cv2.resize(_img, dsize=[_img.shape[1]*factor, _img.shape[0]*factor], interpolation=cv2.INTER_CUBIC) #LANCZOS4)
     if fname is not None:
         plt.imsave(fname, _img, cmap='gray')
@@ -463,19 +441,19 @@ def print_latex_basic_stats_fk_gw(data, tp, mask_th=0.9):
         string = ''
         tmp = 100 * (mask * tp['fc_T']).flatten(); 
         tmp = tmp[~np.isnan(tmp)]
-        string += f"f_{{ss}}={tmp.mean():.2f}\pm{tmp.std():.2f}\ (\%),\ "
+        string += f"f_{{ss}}={tmp.mean():.2f}\\pm{tmp.std():.2f}\ (\%),\ "
                 
         tmp = (mask * tp['kc_T']).flatten(); 
         tmp = tmp[~np.isnan(tmp)]
-        string += f"k_{{ss}}={tmp.mean():.1f}\pm{tmp.std():.1f}\ (s^{{-1}}),\ "
+        string += f"k_{{ss}}={tmp.mean():.1f}\\pm{tmp.std():.1f}\ (s^{{-1}}),\ "
 
         tmp = 100 * (mask * tp['fb_T']).flatten()
         tmp = tmp[~np.isnan(tmp)]
-        string += f"f_{{s}}={tmp.mean():.2f}\pm{tmp.std():.2f}\ (\%),\ "
+        string += f"f_{{s}}={tmp.mean():.2f}\\pm{tmp.std():.2f}\ (\%),\ "
                 
         tmp = (mask * tp['kb_T']).flatten(); 
         tmp = tmp[~np.isnan(tmp)]
-        string += f"k_{{s}}={tmp.mean():.1f}\pm{tmp.std():.1f}\ (s^{{-1}})"
+        string += f"k_{{s}}={tmp.mean():.1f}\\pm{tmp.std():.1f}\ (s^{{-1}})"
         print(tissue_type)
         print(string )
 
@@ -505,12 +483,9 @@ def boxplot_white_vs_gray(gray, white, f, k, pool='CEST',
     print(f'WM: f={_white_f.mean():3f}+-{_white_f.std():3f} , k={_white_k.mean():3f}+-{_white_k.std():3f} ')
     
     fig1 = plt.figure(figsize=(8, 6))
-    plt.subplot(2,1,1)
-    #plt.title(f'quantitative {pool} - nbmf vs. literature values\nVOLUME FRACTION (%)', fontsize=12)    
-    plt.gca().set_xticklabels(('WM', 'GM'), fontsize=15); plt.ylabel("$f_{ss}$ (%)" if pool=='MT' else "$f_{s}$ (%)", fontsize=15); #plt.ylim(0, 1)
-    #styles = [':rp', ':go', ':bs', ':md', ':cx']  # TODO the connecting lines may be confusing
-    styles = ['rp', 'go', 'bs', 'md', 'cx']
-    #styles = ['r_', 'g_', 'b_', 'm_', 'c_']
+    plt.subplot(2,1,1)    
+    plt.gca().set_xticklabels(('WM', 'GM'), fontsize=15); plt.ylabel("$f_{ss}$ (%)" if pool=='MT' else "$f_{s}$ (%)", fontsize=15); #plt.ylim(0, 1)    
+    styles = ['rp', 'go', 'bs', 'md', 'cx']    
     msize = 10
     for vals, style in zip(lit_f_wm_gm, styles):
         plt.plot([1, 2], vals, style, markersize=msize, alpha=0.5) #, fillstyle='none')     
@@ -554,7 +529,6 @@ def boxplot_white_vs_gray(gray, white, f, k, pool='CEST',
 
 cmap_mgm = plt.cm.get_cmap("magma").copy();  cmap_mgm.set_bad('black', 1.)
 cmap_vir= plt.cm.get_cmap("viridis").copy(); cmap_vir.set_bad('black', 1.)
-#cmap_err = plt.cm.get_cmap("YlOrRd").copy(); cmap_err.set_bad('black', 0.)    # darks: # CMRmap  # seismic # twilight_shifted # bone
 cmap_R = plt.cm.get_cmap("YlOrRd_r").copy();  cmap_R.set_bad('1.')
 
 def slice_row_plot(fss_pred, kss_pred, err_3d, slices=None,
@@ -563,7 +537,7 @@ def slice_row_plot(fss_pred, kss_pred, err_3d, slices=None,
                           'semi-solid exchange rate (Hz)', '$k_{ssw}$ $(s^{-1})$',
                           'signal reconstruction','$R^2_{fit}$'   # signal reconstruction RMSE (%)
                           ]):     
-    # TODO rename from fss/kss to generic
+    # NOTE arguments called fss/kss historically but function can and is used for amide too..
     slices = slices or np.int32(np.linspace(5,40,10))[3:-2]  # cutting best/central 5 out of 10 rep. 
     figsize = figsize or (25,10)
     fig = plt.figure(figsize=figsize) 
@@ -826,18 +800,15 @@ def signal_fit_eval_viz(measured, reconstituted, ds=5, draw_ratio=False):
         a = reconstituted.reshape(31, -1)
         b = measured.reshape(31, -1)        
         for mrfind in range(31):
-            inds_sorted = np.argsort(a[mrfind]) # TODO replace by percentile?
+            inds_sorted = np.argsort(a[mrfind]) 
             for ri in np.int32(np.linspace(0, a.shape[1]-1, 10)):
-                z = inds_sorted[ri]
-                #z = np.random.choice(np.arange(a.shape[1]))            
+                z = inds_sorted[ri]                        
                 x = xaxis[mrfind, z]            
                 plt.plot([np.round(x), np.round(x)+0.5], [a[mrfind, z], b[mrfind, z]], 'k', linewidth=1)
         # plt.legend(['measured','reconstituted'], loc='upper left')
     # plt.ylabel('reconstituted / measured')
     plt.ylim(0, 1.2) # plt.ylim(0.5, 1.5)
     plt.xlabel('MRF iteration')
-
-    #plt.figure(figsize=(10,3))    
     plt.subplot(1,2,2)
     signal_est_diffnorm_map = jnp.linalg.norm(reconstituted - measured, axis=0)
     signal_est_diffnorm_map /= jnp.linalg.norm(measured, axis=0)
@@ -856,12 +827,10 @@ def signal_fit_eval_viz(measured, reconstituted, ds=5, draw_ratio=False):
 def slicewise_icc(map1, map2, icctype='ICC2'):
     """ ICC3.1 measures "consistency" while ICC2.1 measures "absolute agreement".
     """
-    import pingouin as pg
-    # icc_results = []    
-    # for sl in range(map1.shape[1]):
+    import pingouin as pg    
     if True:
-        map1 = map1.flatten() # [:, sl, :].flatten()
-        map2 = map2.flatten() # [:, sl, :].flatten()
+        map1 = map1.flatten() 
+        map2 = map2.flatten() 
         slice1 = map1[~np.isnan(map1) & ~np.isnan(map2)]
         slice2 = map2[~np.isnan(map1) & ~np.isnan(map2)]
         data = pd.DataFrame({
@@ -875,11 +844,9 @@ def slicewise_icc(map1, map2, icctype='ICC2'):
         
         # Filter for correct type (ICC(2,1) / ICC(2,1)) and store the result
         icc_x = icc[icc['Type'] == icctype]
-        icc_result = icc_x['ICC'].values[0]
-        # icc_results.append(icc_result)
+        icc_result = icc_x['ICC'].values[0]        
 
-    return icc_result
-    # return np.array(icc_results)
+    return icc_result    
 
 
 def plot_XY_bland_altman(

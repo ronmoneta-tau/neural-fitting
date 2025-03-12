@@ -55,7 +55,7 @@ def get_SL_rot(w1, dwa, sign=1):
             w1 - the B1 precession angular freq (rad)
             dwa - the off-resonance freq (rad)
             sign - pos for "SL-on", neg for "SL-off"
-        Assumptions:  (TODO constantly re-evaluate:)
+        Assumptions: 
             - hard pulse, affects all pools (a,b,c) despite PPM diff (even MT?!)
             - phase cycling not important, saturation pulse is phase matched,
                 so the SL on/off is simply modeled as rotation with +- FA
@@ -105,13 +105,10 @@ def get_crusher_mat_T():
     return jnp.array(crusher_mat)    
 
 
-# Deprecated:  7x7 BM matrix, using only Z for MT. TODO re-enable?
-# Zaiss2015, Appendix A.  7x7, a(xyz), b(xyz), c(z). assuming R2c >> Rxx, Kxx 
-# Rrfc = w1**2 * R2c / (R2c**2 + dwc**2) # (!) Lorentzian lineshape assumed for simplicity
-
 def get_BMmat_N_pool(w1, dw_l, R1_l, R2_l, Ka2x_l, Kx2a_l):
-    """ ! UNTESTED since the initial POC] 
-        ! TODO test this with 3 pools, then with additional pools.        
+    """ NOTE: a stub, not tested since the initial POC!
+        When reviving, need to test with 2, then 3 then >3 pools.
+        
         Get a full Bloch-McConnell Matrix for N pools.        
         assuming B1 along X
         Implicitly Taking lorentzian lineshape for (c) pool (semisolid MT). 
@@ -222,7 +219,7 @@ def dicts2args(tissue_params, w_dict, wrf_T):
     R1c = (tissue_params.get('R1c_T') or R1a).reshape(1, -1)
     R2c = tissue_params['R2c_T'].reshape(1, -1)
     
-    wrf_T = wrf_T.reshape(-1, 1)  # TODO why not inside "w_dict"
+    wrf_T = wrf_T.reshape(-1, 1)
         
     seq_len = wrf_T.shape[0]
     w1 =  w_dict['w1_T'].reshape(seq_len, -1)   
@@ -332,7 +329,7 @@ def forward_mrf(
                 if pulse < num_pulses-1:
                     M_mtx = jnp.matmul(_expm_BM_Amtx_t_delay, (M_mtx - _Mss_delay_mtx)) + _Mss_delay_mtx
 
-            # Crusher (TODO is it functionally redundant as we just take the Z anyways, next?)
+            # Crusher (probably functionally redundant as we just take the Z anyways..)
             Mvec_T = jnp.matmul(crusher_mat_T, M_mtx)[:, :, 0]
             
             # Extract the resultant Z magnetization of pool (a)
@@ -432,8 +429,7 @@ def gen_Rex_max(fb, kb, w1, dw_sq, wa, wb, R2b, Quarter_Gamma_Square):
     den = (dw_sq+jnp.square(w1)) * Quarter_Gamma_Square
     return num / den
 
-def gen_Rex(Rex_max,Quarter_Gamma_Square,dwb_sq):
-    # TODO - the numerator also changes whe dwb_sq is not zero, right?!?!
+def gen_Rex(Rex_max,Quarter_Gamma_Square,dwb_sq):    
     num = Rex_max * Quarter_Gamma_Square
     den = Quarter_Gamma_Square+dwb_sq
     return num / den
@@ -482,7 +478,7 @@ def pulsed_evolution(Z_prev, Zss_cw, wa, wb, wrf, w1, R1a, R2a, R1b, R2b, kb, fb
     alpha = Zss_cw * (1 - jnp.exp(-R1rho*tpulse)) + PzeffPz * jnp.exp(-R1rho*tpulse) * (1 - (daa + fb*dab)) 
     
     beta =  (daa + dab*psi) * PzeffPz
-    Zss_pulsed = alpha / (1 - beta * jnp.exp(-tpulse*R1rho))  # Good formula, eq [A5.1]
+    Zss_pulsed = alpha / (1 - beta * jnp.exp(-tpulse*R1rho))  # eq [A5.1]
 
     n = jnp.ceil(tsat / (tpulse + tdelay) ) # !!
     Zn = (Z0 - Zss_pulsed) * jnp.exp(-R1rho*tpulse*n) * jnp.power(beta, n) + Zss_pulsed
@@ -496,7 +492,7 @@ def forward_mrf_isar2(f_T, k_T, wa_T, wb_T, R1a_T, R2a_T, R1b_T, R2b_T, w1_MT_T,
     """ ISAR2
     """
     R1rho_T = gen_R1rho_full(wa_T, wb_T, R1a_T, R2a_T, R2b_T, k_T, f_T, w1_MT_T, wrf_MT_T)
-    Zss_cw_T = R1a_T / R1rho_T  # maybe need cos(theta) ?!
+    Zss_cw_T = R1a_T / R1rho_T  # do we need cos(theta) here?
 
     Z_pre_sat_T = jnp.ones_like(wa_T)
     Z_acq = []
@@ -517,20 +513,19 @@ def forward_mrf_isar2(f_T, k_T, wa_T, wb_T, R1a_T, R2a_T, R1b_T, R2b_T, w1_MT_T,
         Z_acq.append(Z_post_sat_T) 
         
         # ~~ EXPERIMENTAL: replacing by measured to "separate" experiments.
-        if mode == 'parallel': 
-            #import ipdb; ipdb.set_trace()
+        if mode == 'parallel':             
             Z_post_sat_T = Z_acq_meas[sr: (sr+1)] 
             # NOTE - this assumes normalization by equilibrated, no-saturated measurement (e.g. /= Z_acq_meas[0])
         # ~~
 
-        if simulate_acquisition:   ## TODO how much improvement it gives now?>
-        # TODO (!) what about other pools (e.g. ss) evolution during acquisition and exchange?!
+        if simulate_acquisition: # i.e, readout
+        # NOTE: neglecting other pools (e.g. ss) evolution during readout.
             Z_tmp = Z_post_sat_T
             for ii in range(num_flip_pulses): 
                 Z_tmp = Z_tmp * flip_cos  # ...assuming no transverse magnetisation flipping into Z ? 
                 Z_tmp = 1 - (1 - Z_tmp) * jnp.exp(-R1a_T * t_flip_period)            
         else:
-            Z_tmp = 0  #Z_pre_sat_T = 1 - torch.exp(-R1a_T * t_acq_rlx)
+            Z_tmp = 0 
 
         Z_pre_sat_T = 1 - (1 - Z_tmp) * jnp.exp(-R1a_T * t_acq_rlx)
         

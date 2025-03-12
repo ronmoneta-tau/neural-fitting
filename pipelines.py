@@ -80,12 +80,13 @@ def run_train(
     predictor_mt = net.state2predictor(model_state)
     tc_dict = asdict(train.train_config)
     tc_dict = {k: v for k, v in tc_dict.items() if type(v) != str}  # WA jax bug
-    # TODO also save/load infer_config? (in fact it's the most critical to ensure train2test consistency)
+    # Note: ideally, infer_config should be also stored alongside checkpoint & used to ensure train/test consistency
+    # in pre/post-processing (i.e. network's outputs' interpretation..)
     net.save_ckpt(
         model_state,
         config={'train_cfg': tc_dict, 'net_cfg': net_kwargs},
         folder=f'{ckpt_folder}/mt{ckptsfx}/',
-        step=666)  # TODO extract step#
+        step=666)  # just a stub, need to upgrade by extracting correct step number
 
     if do_amide:
         brain2train_mt.ds = 1        
@@ -119,7 +120,7 @@ def run_train(
             model_state,
             config={'train_cfg': tc_dict, 'net_cfg': net_kwargs},
             folder=f'{ckpt_folder}/amide{ckptsfx}/',
-            step=666  # TODO extract step
+            step=666 
         )
         logger.info(
             f"Timings: t(MTtrain)={t1-t0}sec, t(AMIDEtrain)={t3-t2}sec, t(total-train)={t3-t2+t1-t0}sec, gross-total: {t3-t0}sec")
@@ -133,7 +134,8 @@ def run_train(
 
 
 def finetune(data2train, ckpt_path):
-    """ TODO not tested since initial POC """
+    """ NOTE: a stub, not tested since initial POC 
+    """
     train.train_config = pipeline_config.train_config()
     infer.infer_config = pipeline_config.infer_config()
 
@@ -144,7 +146,7 @@ def finetune(data2train, ckpt_path):
     restored = mngr.restore(mngr.latest_step())
     model_state_d = restored['model_state']
     config = restored['config']
-    get_net_kwargs = config['net_cfg']  # TODO what about rest of config?
+    get_net_kwargs = config['net_cfg']  # ..what about rest of config?
     nnmodel, nnparams = net.get_net(**get_net_kwargs)
     model_state_d['apply_fn'] = nnmodel.apply
     ModelState = collections.namedtuple(
@@ -231,15 +233,13 @@ def transfer(
                         do_forward=do_forward)
 
     return (brain2test_mt, mt_tissue_param_est, _mt_reconstructed_signal,
-            brain2test_amide, amide_tissue_param_est, _amide_reconstructed_signal)
-    # TODO maybe dict?
+            brain2test_amide, amide_tissue_param_est, _amide_reconstructed_signal)    
 
 
 def plot_slice_rows_wrapper(transfer_res,
-                            mt_fig_name, amide_fig_name='1',
-                            # fss_lims=[0, 20], kss_lims=[0, 70], #
+                            mt_fig_name, amide_fig_name='1',                            
                             fss_lims=[0, 30], kss_lims=[0, 100],
-                            fs_lims=[0, 0.7], ks_lims=[0, 500],  # [100, 400],
+                            fs_lims=[0, 0.7], ks_lims=[0, 500], 
                             figsize=None, slices=None, do_err=True):
 
     brain2test_mt, mt_tissue_param_est, mt_reconstructed_signal, \
@@ -303,9 +303,7 @@ def boxplots_wrapper(
     mt_fig_name, amide_fig_name, mask_th=0.9
 ):
     """ Draw the boxplot comparing fitting results to literature
-    """
-    #mask_gray = np.float32(brain2test_data.gray > mask_th) 
-    #mask_white = np.float32(brain2test_data.white > mask_th)
+    """    
     mask_gray[mask_gray == 0] = np.nan
     mask_white[mask_white == 0] = np.nan
 
@@ -332,33 +330,6 @@ def boxplots_wrapper(
             lit_names=('Heo 2019', 'Liu 2013', 'Perlman 2022', 'Carradus 2023')
             )[0]
         plt.savefig(amide_fig_name, bbox_inches='tight')
-
-
-def mt_repeated_run():
-    """ Robustness analysis """
-    tau_vol7_folder = '/data/healthy_volunteers/tau_vol7_feb19_2024/eval/'
-    tau_vol8_folder = '/data/healthy_volunteers/tau_vol8_mar_2024/eval'
-    data_test = data = data.Folder2Data().load_erl(tau_vol7_folder, crop_bot=45, raw_folder='', drop_first=False)
-    data_train= data.Folder2Data().load_erl(tau_vol8_folder, crop_bot=45, raw_folder='', drop_first=False)
-    
-    # # work around a weird GPU leak (TODO was it temporary?) by reducing the batch size
-    # pipeline_config.mt_test_slw = 2
-    # pipeline_config.mt_train_slw = 2 # ..might impact learning..
-    
-    for jj in range(10):
-        figs_dirname = f"selfsupervised_figs/8to7/{time.strftime('%B%d_%H%M')}/"
-        os.mkdir(figs_dirname)
-        predictor_mt, _ = run_train(data_train, do_amide=False, ckpt_folder='selfsupervised_figs/ckpts')
-        # jax.clear_backends()
-        transfer_res, err_mt_train, _ = transfer_and_plot(data_train, predictor_mt, None, figsfolder=figs_dirname, figsfx='train')
-        # jax.clear_backends()
-        transfer_res, err_mt_test, _ = transfer_and_plot(data_test, predictor_mt, None, figsfolder=figs_dirname, figsfx='test')
-        np.savez_compressed(figs_dirname+'/err', err_mt_test=err_mt_test, err_mt_train=err_mt_train)
-        # errs_same.append(err_mt_train);             errs_transfer.append(err_mt_test)            
-        plt.close('all')
-        gc.collect()
-        jax.clear_backends()
-    
 
 def get_logger(fname):    
     logging.basicConfig(        
@@ -395,49 +366,3 @@ def simple_infer_wrap(ds, nn_predictor, simulation_mode='expm_bmmat', visualize=
         plt.xlabel('signal pred/meas RRMSE (%)')
     
     return tissue_params, nn_pred_signal_normed_np, nsignal_error
-
-    
-def VBMF_MT_run(brain2train_mt, dirname='vbmf', mt_steps=None, slices2plot=None):
-    run_dirname = os.path.join(dirname, time.strftime('%B%d_%H%M')) 
-    if not os.path.exists(run_dirname):
-        os.makedirs(run_dirname)
-    logger = get_logger(f'{dirname}/log.log')        
-        
-    infer.infer_config = pipeline_config.infer_config
-    train.train_config = pipeline_config.train_config
-    train.train_config.tp_noise = False  
-    train.train_config.use_shuffled_sampler = False
-    train.train_config.patience = pipeline_config.mt_patience
-    mt_steps = mt_steps or pipeline_config.mt_steps
-    
-    # Solved a mysterious bug when trying to VBMF the CEST (that didn't coverge); TODO do we need it for MT ?
-    jax.config.update("jax_enable_x64", True)
-    
-    mt_lr = 1e-2
-    t0 = time.time()        
-    # brain2train_mt.slw = np.min([pipeline_config.mt_train_slw, brain2train_mt.shape[1]])
-    model_state, loss_trend_mt, net_kwargs = \
-        train.train(brain2train_mt, model_state=None, pool2predict='c', logger=None,                                
-                    mode='bloch_fitting', simulation_mode='isar2_c', steps=mt_steps, lr=mt_lr)
-    logger.info(f"T(VBMF)={time.time()-t0}sec")
-    # To evaluate, we set the fitted values as "ground truth" on a copy dataset
-    brain2test_mt = copy.deepcopy(brain2train_mt)    
-    train.bmfit_set_gt_from_model_state(brain2test_mt, model_state)  
-    mt_tissue_param_est, _mt_reconstructed_signal = infer.infer(
-        brain2test_mt, pool2predict='bc', 
-        nn_predictor=None, simulation_mode='isar2_c', do_forward=True
-        )  
-
-    brain2test_amide = None; amide_tissue_param_est = _amide_reconstructed_signal = None
-    transfer_res = (brain2test_mt, mt_tissue_param_est, _mt_reconstructed_signal, \
-                    brain2test_amide, amide_tissue_param_est, _amide_reconstructed_signal)
-        
-    err_mt, err_amide = plot_slice_rows_wrapper(
-        transfer_res, slices=slices2plot, mt_fig_name=run_dirname+'/mt_VBMF.png'
-        )
-    np.savez_compressed(run_dirname+'/err', err_mt_train=err_mt, mt_tissue_param_est=mt_tissue_param_est)
-    return mt_tissue_param_est, err_mt
-
-if __name__ == "__main__":
-    VBMF_MT_run()
-    # mt_repeated_run()  
