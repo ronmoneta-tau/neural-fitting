@@ -8,9 +8,9 @@
 </div>
 
 # Neural Bloch-McConnell Fitting (NBMF)
-*Quantitative molecular imaging extracts biophysical parameter maps by solving physics-based inverse problems. We employ AI-driven methods to address the challenges of dynamic complexity and ill-posedness, enabling rapid and robust estimation scaled to millions of brain voxels.*
+In 350 characters: *Quantitative molecular imaging extracts biophysical parameter maps by solving physics-based inverse problems. We employ AI-driven methods to address the challenges of dynamic complexity and ill-posedness, enabling rapid and robust estimation scaled to millions of brain voxels.*
 ## 
-This repository shares the methods described in our work **"Multi-Parameter Molecular MRI Quantification using Physics-Informed Self-Supervised Learning"**, presented in ISMRM24' ([abstract](https://archive.ismrm.org/2024/4478.html)) and accepted for publication in Nature Communications Physics. Also available as a preprint on Arxiv as [abstract](https://arxiv.org/abs/2411.06447), [html full-text](https://arxiv.org/html/2411.06447), [pdf full-text](https://arxiv.org/pdf/2411.06447). 
+This repository shares the methods described in our work **"Multi-Parameter Molecular MRI Quantification using Physics-Informed Self-Supervised Learning"**, presented in ISMRM24' ([abstract](https://archive.ismrm.org/2024/4478.html)) and accepted for publication in Communications Physics. Also available as a preprint on Arxiv as [abstract](https://arxiv.org/abs/2411.06447), [html full-text](https://arxiv.org/html/2411.06447), [pdf full-text](https://arxiv.org/pdf/2411.06447). 
 
 Main targets, and ideas/methods developed and implemented to achieve them: 
 * ✨Speed✨: **Jax-based auto-differentiated numerical solutions** of Ordinary Differential Equations (ODE); towards **computationally feasible gradients** of forward physics models relfecting complex dynamics simulation. This facilitates fitting and estimation of physical constants underlying the ODE coefficients from observed data.
