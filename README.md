@@ -63,7 +63,7 @@ We believe in openly sharing information between research group and contribute d
 Whether you have a question or a bug to fix, please let us know. See our group website at: https://mri-ai.github.io/
 
 ## 📑 References
-If you use this code for research or software development please reference the following publication:
+If you use this code for research or software development please cite the following publication:
 ``` # TO CHANGE
 Finkelstein, A., Vladimirov, N., Zaiss, M., & Perlman, O. (2024). Multi-Parameter Molecular MRI Quantification using Physics-Informed Self-Supervised Learning. arXiv preprint arXiv:2411.06447.‏
 ```
