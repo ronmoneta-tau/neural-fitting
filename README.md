@@ -37,6 +37,7 @@ Then cd to the cloned repo folder, and run:
 git lfs install
 git lfs pull
 ```
+The larger files in data will turn from pointers (~10K)  to actual files (>10M). 
 
 ### Demo of the methods, reproducing figures
 
