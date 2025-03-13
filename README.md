@@ -26,6 +26,18 @@ Main targets, and ideas/methods developed and implemented to achieve them:
 
 ## ⚡ Getting Started
 
+Clone the repo or download zip archive (in that case skip the next section, data files are included in the zip).
+
+### Obtaining data files
+
+Install git-lfs on your system by ```sudo apt-get install git-lfs``` or if you're not admin, by ```bash data/no_sudo_install_git_lfs.sh```
+
+Then cd to the cloned repo folder, and run:
+```bash
+git lfs install
+git lfs pull
+```
+
 ### Demo of the methods, reproducing figures
 
 The notebooks ```demo_in_vitro.ipynb``` and ```demo_in_vivo.ipynb``` can be viewed on web
