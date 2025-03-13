@@ -1,5 +1,5 @@
 [![arXiv](https://img.shields.io/badge/arXiv-2411.06447-B31B1B.svg)](https://arxiv.org/abs/2411.06447)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.15015747.svg)](https://doi.org/10.5281/zenodo.15015747)
+
 </div>
 <a href='https://github.com/falex-aimri' target='_blank'>Alex Finkelstein</a> |
 <a href='https://github.com/vnikale' target='_blank'>Nikita Vladimirov</a> |
