@@ -1,4 +1,6 @@
 [![arXiv](https://img.shields.io/badge/arXiv-2411.06447-B31B1B.svg)](https://arxiv.org/abs/2411.06447)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.15021550.svg)](https://doi.org/10.5281/zenodo.15021550)
+
 
 </div>
 <a href='https://github.com/falex-aimri' target='_blank'>Alex Finkelstein</a> |
