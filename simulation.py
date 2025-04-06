@@ -33,16 +33,16 @@ import jax, jax.numpy as jnp
 double_precision = False
 
 ## --- following WriteEpiSeqForsimulation.m
-t_flip_period = 28.37e-3   # pulse + delay
-flip_angle = 15 * jnp.pi / 180
+t_flip_period = 2.1e-3   # pulse + delay
+flip_angle = 90 * jnp.pi / 180
 flip_cos = jnp.cos(flip_angle)
-num_flip_pulses = 45
+num_flip_pulses = 1
 ## ---
 
 tpulse_DEF = 0.1
 tdelay_DEF = 0.1
-n_pulses_DEF = 13
-TRs_DEF = [3.5]*30
+n_pulses_DEF = 1
+TRs_DEF = [6]*30
 TSATs_DEF = [2.5]*30
 
 
