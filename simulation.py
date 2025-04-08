@@ -39,10 +39,10 @@ flip_cos = jnp.cos(flip_angle)
 num_flip_pulses = 1
 ## ---
 
-tpulse_DEF = 0.1
+tpulse_DEF = 2.5
 tdelay_DEF = 0.1
 n_pulses_DEF = 1
-TRs_DEF = [6]*30
+TRs_DEF = [3.5]*30
 TSATs_DEF = [2.5]*30
 
 
@@ -291,7 +291,7 @@ def forward_mrf(
     
     # Spin-lock in/out rotations matrices (assuming hard pulse, perfect phase handling, etc.)
     SL_rot_mat_T = get_SL_rot(w1, dwa, sign=1)
-    SL_inv_rot_mat_T = get_SL_rot(w1, dwa, sign=-1)    
+    SL_inv_rot_mat_T = get_SL_rot(w1, dwa, sign=-1)
         
     # Get Mss = - A \ C  (solution of A @ x = - C)
     # (A) steady-state w. RF - should give SL-aligned "fully-saturated" result 
@@ -321,9 +321,9 @@ def forward_mrf(
             # --- SATURATION ---                
             for pulse in range(num_pulses):
                 # PULSE: (a) SL on  (b) BM evolution  (c) SL off        
-                M_mtx = jnp.matmul(_SL_rot_mat_T, M_mtx)          
+                # M_mtx = jnp.matmul(_SL_rot_mat_T, M_mtx)
                 M_mtx = jnp.matmul(_expm_BM_Amtx_t_pulse, (M_mtx - _Mss_pulse_mtx)) + _Mss_pulse_mtx
-                M_mtx = jnp.matmul(_SL_inv_rot_mat_T, M_mtx)
+                # M_mtx = jnp.matmul(_SL_inv_rot_mat_T, M_mtx)
                 
                 # DELAY: BM evolution (no RF)
                 if pulse < num_pulses-1:
@@ -377,9 +377,9 @@ def forward_mrf(
         # Actual propagation here:
         for pulse in range(num_pulses):
             # Pulse: (a) SL on  (b) BM evolution  (c) SL off        
-            M_mtx = jnp.matmul(SL_rot_mat_T, M_mtx) # M[..., None])[:, :, 0]
+            # M_mtx = jnp.matmul(SL_rot_mat_T, M_mtx) # M[..., None])[:, :, 0]
             M_mtx = jnp.matmul(expm_BM_Amtx_t_pulse, (M_mtx - Mss_pulse_mtx)) + Mss_pulse_mtx  # [..., None])[:, :, 0] + Mss_pulse
-            M_mtx = jnp.matmul(SL_inv_rot_mat_T, M_mtx) # M[..., None])[:, :, 0]
+            # M_mtx = jnp.matmul(SL_inv_rot_mat_T, M_mtx) # M[..., None])[:, :, 0]
             
             # Delay: BM evolution (no RF)
             if pulse < num_pulses-1:
@@ -488,7 +488,7 @@ def pulsed_evolution(Z_prev, Zss_cw, wa, wb, wrf, w1, R1a, R2a, R1b, R2b, kb, fb
 
 def forward_mrf_isar2(f_T, k_T, wa_T, wb_T, R1a_T, R2a_T, R1b_T, R2b_T, w1_MT_T, wrf_MT_T, 
                       TRs=TRs_DEF, TSATs=TSATs_DEF, tpulse=tpulse_DEF, tdelay=tdelay_DEF,
-                      simulate_acquisition=True, mode='sequential', Z_acq_meas=None):                           
+                      simulate_acquisition=False, mode='sequential', Z_acq_meas=None):
     """ ISAR2
     """
     R1rho_T = gen_R1rho_full(wa_T, wb_T, R1a_T, R2a_T, R2b_T, k_T, f_T, w1_MT_T, wrf_MT_T)
