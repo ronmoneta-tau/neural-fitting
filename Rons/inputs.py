@@ -1,5 +1,6 @@
 import numpy as np
 import xarray as xr
+import pandas as pd
 import pydicom
 from pathlib import Path
 
@@ -8,20 +9,22 @@ class Inputs:
     def __init__(self, subject: Path):
         self.subject = subject
         self.subject_metadata = self.parse_scan_doc()
-        self.t1_path = self.subject / f'{self.subject_metadata["t1map_number"]}/pdata/4/dicom'  # TODO: does it need to be t1w, or qt1?
-        self.t2_path = self.subject / f'{self.subject_metadata["t2map_number"]}/pdata/2/dicom'  # TODO: does it need to be t2w, or qt2?
-        self.b0_path = self.subject / f'{self.subject_metadata["b0map_number"]}/pdata/1/dicom'
-        self.b1_path = self.subject / f'{self.subject_metadata["b1map_number"]}/pdata/1/dicom'  # TODO: folder for b1map exists, but sometimes empty - if empty assume perfect
-        self.mt_path = self.subject / f'{self.subject_metadata["mt_number"]}/pdata/1/dicom'  # TODO: make sure its 31 (skip first one?)
-        self.rnoe_path = self.subject / f'{self.subject_metadata["rNOE_number"]}/pdata/1/dicom'  # TODO: make sure its 31 (skip first one?)
+        self.t1_path = self.subject / f'{self.subject_metadata["t1map_number"]}'  # TODO: does it need to be t1w, or qt1?
+        self.t2_path = self.subject / f'{self.subject_metadata["t2map_number"]}'  # TODO: does it need to be t2w, or qt2?
+        self.b0_path = self.subject / f'{self.subject_metadata["b0map_number"]}'
+        self.b1_path = self.subject / f'{self.subject_metadata["b1map_number"]}'  # TODO: folder for b1map exists, but sometimes empty - if empty assume perfect
+        self.mt_path = self.subject / f'{self.subject_metadata["mt_number"]}'  # TODO: make sure its 31 (skip first one?)
+        self.rnoe_path = self.subject / f'{self.subject_metadata["rNOE_number"]}'  # TODO: make sure its 31 (skip first one?)
         self.t1_wm_mask_path = self.subject / ''  # ignored for now
         self.t1_gm_mask_path = self.subject / ''  # ignored for now
-        self.t1_map = self.load_auxiliary_data(self.t1_path, '3')  # TODO: Change to generic
-        self.t2_map = self.load_auxiliary_data(self.t2_path, '3')  # TODO: Change to generic
-        self.b0_map = self.load_auxiliary_data(self.b0_path, '02')  # TODO: Change to generic
-        self.b1_map = self.load_auxiliary_data(self.b1_path, '2')  # TODO: Change to generic
+        self.t1_map = self.load_auxiliary_data(self.t1_path / 'pdata/4/dicom', '3')  # TODO: Change to generic
+        self.t2_map = self.load_auxiliary_data(self.t2_path / 'pdata/2/dicom', '3')  # TODO: Change to generic
+        self.b0_map = self.load_auxiliary_data(self.b0_path / 'pdata/1/dicom', '02')  # TODO: Change to generic
+        self.b1_map = self.load_auxiliary_data(self.b1_path / 'pdata/1/dicom', '2')  # TODO: Change to generic
         self.mt_map = self.load_mrf_data(self.mt_path)
         self.rnoe_map = self.load_mrf_data(self.rnoe_path)
+        self.mt_params_path = self.extract_mrf_params(self.mt_path, 'MT')
+        self.rnoe_params_path = self.extract_mrf_params(self.rnoe_path, 'rNOE')
         self.dataset = xr.Dataset(  # TODO: Alex's code has AMIDE_data hardcoded, change when possible
             {'roi_mask_nans': self.t1_map, 'B1_fix_factor_map': self.b1_map, 'B0_shift_ppm_map': self.b0_map,
              'T2ms': self.t2_map, 'T1ms': self.t1_map, 'MT_data': self.mt_map, 'AMIDE_data': self.rnoe_map})
@@ -44,7 +47,8 @@ class Inputs:
         :param mrf_path: Path to the MRF maps
         :return: DataArray of inflated MRF images
         """
-        images = [pydicom.dcmread(im).pixel_array for im in mrf_path.glob('MRIm*.dcm') if im.name != 'MRIm01.dcm']
+        dicom_path = mrf_path / "pdata/1/dicom"
+        images = [pydicom.dcmread(im).pixel_array for im in dicom_path.glob('MRIm*.dcm') if im.name != 'MRIm01.dcm']
         mrf_data = np.stack(images, axis=0)
         mrf_data = np.expand_dims(mrf_data, axis=2)  # Add a new axis to the array
         mrf_data = np.repeat(mrf_data, 4, axis=2)  # Repeat the array along the new axis
@@ -85,3 +89,55 @@ class Inputs:
                 'rNOE_number': scan_doc.get('51_rnoe', None)
             }
         return subject_metadata
+
+    def extract_values_from_method_file(self, lines, start_index):
+        """
+        Extract values from a method file starting at a given index.
+        """
+        values = []
+        for line in lines[start_index:]:
+            if line.startswith("##$"):
+                break
+            values.extend(map(float, line.split()))
+        return values
+
+    def extract_mrf_params(self, scan_path: Path, name: str) -> Path:
+        """
+        Extract MRF acquisition protocol parameters from a method file and save them to a file.
+        """
+        method_file_path = scan_path / 'method'
+        if not method_file_path.exists():
+            raise FileNotFoundError(f"Method file not found at {method_file_path}")
+
+        with open(method_file_path, 'r') as file:
+            method_file = file.readlines()
+
+        param_map = {
+            "##$Fp_TRs": "TR_ms",
+            "##$Fp_SatPows": "B1_uT",
+            "##$Fp_SatOffset": "dwRF_Hz",
+            "##$Fp_FlipAngle": "FA",
+            "##$Fp_SatDur": "Tsat_ms"
+        }
+
+        data = {key: [] for key in param_map.values()}
+
+        for i, line in enumerate(method_file):
+            for key, param_name in param_map.items():
+                if line.startswith(key):
+                    data[param_name] = self.extract_values_from_method_file(method_file, i + 1)[1:]
+
+        # Convert to DataFrame for easier handling
+        df = pd.DataFrame(data)
+
+        df['TR_ms'] = df['TR_ms'].round().astype(int)
+        df['dwRF_Hz'] = df['dwRF_Hz'].round().astype(int)
+        df['FA'] = df['FA'].round().astype(int)
+        df['Tsat_ms'] = df['Tsat_ms'].round().astype(int)
+        df['B1_uT'] = df['B1_uT'].round(2)
+
+        # Save to a space-separated text file
+        params_path = Path(f'{name}_mrf_params.txt')
+        df.to_csv(params_path, sep=' ', index=False, header=True)
+
+        return params_path

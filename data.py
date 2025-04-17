@@ -153,7 +153,7 @@ class SlicesFeed(torch.utils.data.Dataset):
             kb_gt_T=300, fb_gt_T=2e-3, kc_gt_T=70, fc_gt_T=0.2,  # WM
             b_ppm=wb_ppm_DEF, T2b_ms=T2b_ms_DEF, c_ppm=wc_ppm_DEF, T2c_ms=T2c_ms_DEF, same_T1=True, 
             B0=B0_base_DEF, B0_shift_ppm_map=0, B1_fix_factor_map=1,
-            roi_mask_nans=1, signal=np.nan, drop_first=False):
+            roi_mask_nans=1, signal=np.nan, drop_first=False, **kwargs):
         """
             All tissue-parameter arguments can be maps shaped as <shape> arg, or scalars.
             The "ground truth" parameters are only used in pure forward-simulation flows (no fitting/training), e.g., synthetic data generation
@@ -162,7 +162,10 @@ class SlicesFeed(torch.utils.data.Dataset):
         data4nbmf.shape = shape
         data4nbmf.slw = min(data4nbmf.slw, data4nbmf.shape[1])    
         if type(seq_df) == type(None):
-            seq_df = get_seq(drop_first=drop_first)[mt_or_amide]
+            if 'mt_seq_txt_fname' in kwargs and 'larg_seq_txt_fname' in kwargs:
+                seq_df = get_seq(mt_seq_txt_fname=kwargs['mt_seq_txt_fname'], larg_seq_txt_fname=kwargs['larg_seq_txt_fname'],drop_first=drop_first)[mt_or_amide]
+            else:
+                seq_df = get_seq(drop_first=drop_first)[mt_or_amide]
         data4nbmf.seq_df = seq_df
         data4nbmf.seq_len = seq_len = len(data4nbmf.seq_df['B1_uT'])  # signal.shape[0]        
         
