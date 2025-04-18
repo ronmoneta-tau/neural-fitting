@@ -2,12 +2,15 @@ import numpy as np
 import xarray as xr
 import pandas as pd
 import pydicom
+import os
+import cv2
 from pathlib import Path
-
+from get_paravision_t1_t2_map_ms import get_paravision_map_ms
 
 class Inputs:
-    def __init__(self, subject: Path):
+    def __init__(self, subject: Path, name: str):
         self.subject = subject
+        self.name = name
         self.subject_metadata = self.parse_scan_doc()
         self.t1_path = self.subject / f'{self.subject_metadata["t1map_number"]}'  # TODO: does it need to be t1w, or qt1?
         self.t2_path = self.subject / f'{self.subject_metadata["t2map_number"]}'  # TODO: does it need to be t2w, or qt2?
@@ -17,8 +20,9 @@ class Inputs:
         self.rnoe_path = self.subject / f'{self.subject_metadata["rNOE_number"]}'  # TODO: make sure its 31 (skip first one?)
         self.t1_wm_mask_path = self.subject / ''  # ignored for now
         self.t1_gm_mask_path = self.subject / ''  # ignored for now
-        self.t1_map = self.load_auxiliary_data(self.t1_path / 'pdata/4/dicom', '3')  # TODO: Change to generic
-        self.t2_map = self.load_auxiliary_data(self.t2_path / 'pdata/2/dicom', '3')  # TODO: Change to generic
+        self.roi_mask = self.load_roi_mask()
+        self.t1_qmap = self.get_qmaps(self.t1_path)
+        self.t2_qmap = self.get_qmaps(self.t2_path)
         self.b0_map = self.load_auxiliary_data(self.b0_path / 'pdata/1/dicom', '02')  # TODO: Change to generic
         self.b1_map = self.load_auxiliary_data(self.b1_path / 'pdata/1/dicom', '2')  # TODO: Change to generic
         self.mt_map = self.load_mrf_data(self.mt_path)
@@ -26,8 +30,8 @@ class Inputs:
         self.mt_params_path = self.extract_mrf_params(self.mt_path, 'MT')
         self.rnoe_params_path = self.extract_mrf_params(self.rnoe_path, 'rNOE')
         self.dataset = xr.Dataset(  # TODO: Alex's code has AMIDE_data hardcoded, change when possible
-            {'roi_mask_nans': self.t1_map, 'B1_fix_factor_map': self.b1_map, 'B0_shift_ppm_map': self.b0_map,
-             'T2ms': self.t2_map, 'T1ms': self.t1_map, 'MT_data': self.mt_map, 'AMIDE_data': self.rnoe_map})
+            {'roi_mask_nans': self.roi_mask, 'B1_fix_factor_map': self.b1_map, 'B0_shift_ppm_map': self.b0_map,
+             'T2ms': self.t2_qmap, 'T1ms': self.t1_qmap, 'MT_data': self.mt_map, 'AMIDE_data': self.rnoe_map})
 
     def load_auxiliary_data(self, map_path: Path, echo: str) -> xr.DataArray:
         """
@@ -36,9 +40,8 @@ class Inputs:
         :param echo: Index of the echo to load
         :return: DataArray of inflated echo of the auxiliary map
         """
-        echo = pydicom.dcmread(map_path / f'MRIm{echo}.dcm').pixel_array
+        echo = pydicom.dcmread(map_path / f'MRIm{echo}.dcm').pixel_array.astype(float)
         echo = np.expand_dims(echo, axis=1)  # Add a new axis to the array
-        echo = np.repeat(echo, 4, axis=1)  # Repeat the array along the new axis
         return xr.DataArray(echo, dims=("height", "slice", "width"))
 
     def load_mrf_data(self, mrf_path: Path) -> xr.DataArray:
@@ -48,11 +51,21 @@ class Inputs:
         :return: DataArray of inflated MRF images
         """
         dicom_path = mrf_path / "pdata/1/dicom"
-        images = [pydicom.dcmread(im).pixel_array for im in dicom_path.glob('MRIm*.dcm') if im.name != 'MRIm01.dcm']
+        images = [pydicom.dcmread(im).pixel_array.astype(float) for im in dicom_path.glob('MRIm*.dcm') if im.name != 'MRIm01.dcm']
         mrf_data = np.stack(images, axis=0)
         mrf_data = np.expand_dims(mrf_data, axis=2)  # Add a new axis to the array
-        mrf_data = np.repeat(mrf_data, 4, axis=2)  # Repeat the array along the new axis
         return xr.DataArray(mrf_data, dims=("MRF_cycles", "height", "slice", "width"))
+
+    def load_roi_mask(self) -> xr.DataArray:
+        """
+        Load the ROI mask and convert it to a DataArray.
+        :return: DataArray of the ROI mask
+        """
+        roi_mask = np.load(self.subject.parent.parent / "results" / self.name / "brain_mask.npy").astype(float)
+        roi_mask = cv2.resize(roi_mask, (64, 64), interpolation=cv2.INTER_NEAREST)
+        roi_mask = np.ma.masked_equal(roi_mask, 0.).filled(np.nan) # Changes mask from boolean to 1./nan
+        roi_mask = np.expand_dims(roi_mask, axis=1)  # Add a new axis to the array
+        return xr.DataArray(roi_mask, dims=("height", "slice", "width"))
 
     def parse_scan_doc(self) -> {str: {str: str}}:
         """
@@ -141,3 +154,20 @@ class Inputs:
         df.to_csv(params_path, sep=' ', index=False, header=True)
 
         return params_path
+    
+    def get_qmaps(self,t_map_path: Path) -> xr.DataArray:
+        """
+        Generates quantitative map for T1/T2. Folder number 4 should be usd, but if doesn't exist, folder number 2 is used.
+        :param t_map_path: Path to the T1/T2 map folder
+        :return: Quantitative map
+        """
+        folder_4 = t_map_path / 'pdata' / '4'
+        folder_2 = t_map_path / 'pdata' / '2'
+
+        if os.path.isdir(folder_4):
+            qmap = get_paravision_map_ms(folder_4 / 'dicom')
+        elif os.path.isdir(folder_2):
+            qmap = get_paravision_map_ms(folder_2 / 'dicom')
+        
+        qmap = np.expand_dims(qmap, axis=1)  # Add a new axis to the array
+        return xr.DataArray(qmap, dims=("height", "slice", "width"))

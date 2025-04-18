@@ -1102,7 +1102,9 @@ def viz_t1t2b0b1_sample_slices(data_xa, data_feed, sample=True):
     t2_map_log = np.log1p(data_xa['T2ms'].values)
     min_t2log, max_t2log = np.nanmin(t2_map_log), np.nanmax(t2_map_log)
     t1_map_log = np.log1p(data_xa['T1ms'].values)
-    min_t1log, max_t1log = np.nanmin(t1_map_log), np.minimum(np.nanmax(t1_map_log), np.log(4000))    
+    min_t1log, max_t1log = np.nanmin(t1_map_log), np.minimum(np.nanmax(t1_map_log), np.log(4000))  
+    min_b0, max_b0 = np.nanmin(data_xa['B0_shift_ppm_map'].values), np.nanmax(data_xa['B0_shift_ppm_map'].values) # TODO: Rons change
+    min_b1, max_b1 = np.nanmin(data_xa['B1_fix_factor_map'].values), np.nanmax(data_xa['B1_fix_factor_map'].values) # TODO: Rons change
     num_ticks = 5     
     t1_tick_positions = np.linspace(min_t1log, max_t1log, num_ticks)
     t1_tick_labels = np.round( np.exp(t1_tick_positions)/10 ) * 10  # Inverse transform to real values
@@ -1112,6 +1114,10 @@ def viz_t1t2b0b1_sample_slices(data_xa, data_feed, sample=True):
     fig, axes = plt.subplots(4, len(slices2plot), figsize=(len(slices2plot)*2.5 + 2, 12))
     plt.subplots_adjust(wspace=0, hspace=0)
     
+    # TODO: Rons change
+    if len(slices2plot) == 1:
+        axes = np.expand_dims(axes, axis=1)  # Ensure axes is 2D for consistent indexing
+
     for ii, sliceind in enumerate(slices2plot): #range(data_feed.shape[1]):    
         res = axes[0, ii].imshow(t1_map_log[10:-10, sliceind, 7:-7], vmin=min_t1log, vmax=max_t1log, cmap=cmc.lipari)
         axes[0, ii].axis('off')
@@ -1131,14 +1137,14 @@ def viz_t1t2b0b1_sample_slices(data_xa, data_feed, sample=True):
     cbar.set_label(r'T$_2$ [ms]', fontsize=14)
     
     for ii, sliceind in enumerate(slices2plot):   
-        res = axes[2, ii].imshow(data_xa['B1_fix_factor_map'].values[10:-10, sliceind, 7:-7], vmin=0.7, vmax=1.3, cmap='PiYG')
+        res = axes[2, ii].imshow(data_xa['B1_fix_factor_map'].values[10:-10, sliceind, 7:-7], vmin=min_b1, vmax=max_b1, cmap='PiYG')
         axes[2, ii].axis('off')
         axes[3, ii].margins(0,0)
     cbar = plt.colorbar(res, shrink=0.8)
     cbar.set_label(r'B$_1$ deviation [x]', fontsize=14)
     
     for ii, sliceind in enumerate(slices2plot):   
-        res = axes[3, ii].imshow(data_xa['B0_shift_ppm_map'][10:-10, sliceind, 7:-7], vmin=-.5, vmax=.5, cmap='coolwarm')
+        res = axes[3, ii].imshow(data_xa['B0_shift_ppm_map'][10:-10, sliceind, 7:-7], vmin=min_b0, vmax=max_b0, cmap='coolwarm')
         axes[3, ii].axis('off')
         axes[3, ii].margins(0,0)
     cbar = plt.colorbar(res, shrink=0.8)
