@@ -12,12 +12,12 @@ class Inputs:
         self.subject = subject
         self.name = name
         self.subject_metadata = self.parse_scan_doc()
-        self.t1_path = self.subject / f'{self.subject_metadata["t1map_number"]}'  # TODO: does it need to be t1w, or qt1?
-        self.t2_path = self.subject / f'{self.subject_metadata["t2map_number"]}'  # TODO: does it need to be t2w, or qt2?
+        self.t1_path = self.subject / f'{self.subject_metadata["t1map_number"]}'
+        self.t2_path = self.subject / f'{self.subject_metadata["t2map_number"]}'
         self.b0_path = self.subject / f'{self.subject_metadata["b0map_number"]}'
-        self.b1_path = self.subject / f'{self.subject_metadata["b1map_number"]}'  # TODO: folder for b1map exists, but sometimes empty - if empty assume perfect
-        self.mt_path = self.subject / f'{self.subject_metadata["mt_number"]}'  # TODO: make sure its 31 (skip first one?)
-        self.rnoe_path = self.subject / f'{self.subject_metadata["rNOE_number"]}'  # TODO: make sure its 31 (skip first one?)
+        self.b1_path = self.subject / (self.subject_metadata["b1map_number"] if self.subject_metadata["b1map_number"] else "None")
+        self.mt_path = self.subject / f'{self.subject_metadata["mt_number"]}'
+        self.rnoe_path = self.subject / f'{self.subject_metadata["rNOE_number"]}'
         self.t1_wm_mask_path = self.subject / ''  # ignored for now
         self.t1_gm_mask_path = self.subject / ''  # ignored for now
         self.roi_mask = self.load_roi_mask()
@@ -29,9 +29,16 @@ class Inputs:
         self.rnoe_map = self.load_mrf_data(self.rnoe_path)
         self.mt_params_path = self.extract_mrf_params(self.mt_path, 'MT')
         self.rnoe_params_path = self.extract_mrf_params(self.rnoe_path, 'rNOE')
-        self.dataset = xr.Dataset(  # TODO: Alex's code has AMIDE_data hardcoded, change when possible
-            {'roi_mask_nans': self.roi_mask, 'B1_fix_factor_map': self.b1_map, 'B0_shift_ppm_map': self.b0_map,
-             'T2ms': self.t2_qmap, 'T1ms': self.t1_qmap, 'MT_data': self.mt_map, 'AMIDE_data': self.rnoe_map})
+        self.dataset = xr.Dataset(
+            {key: value for key, value in {
+                'roi_mask_nans': self.roi_mask,
+                'B1_fix_factor_map': self.b1_map if self.b1_map is not None else None,
+                'B0_shift_ppm_map': self.b0_map,
+                'T2ms': self.t2_qmap,
+                'T1ms': self.t1_qmap,
+                'MT_data': self.mt_map,
+                'AMIDE_data': self.rnoe_map # TODO: Alex's code has AMIDE_data hardcoded, change when possible
+            }.items() if value is not None})
 
     def load_auxiliary_data(self, map_path: Path, echo: str) -> xr.DataArray:
         """
@@ -40,6 +47,8 @@ class Inputs:
         :param echo: Index of the echo to load
         :return: DataArray of inflated echo of the auxiliary map
         """
+        if "None" in str(map_path):
+            return None
         echo = pydicom.dcmread(map_path / f'MRIm{echo}.dcm').pixel_array.astype(float)
         echo = np.expand_dims(echo, axis=1)  # Add a new axis to the array
         return xr.DataArray(echo, dims=("height", "slice", "width"))
@@ -51,7 +60,14 @@ class Inputs:
         :return: DataArray of inflated MRF images
         """
         dicom_path = mrf_path / "pdata/1/dicom"
-        images = [pydicom.dcmread(im).pixel_array.astype(float) for im in dicom_path.glob('MRIm*.dcm') if im.name != 'MRIm01.dcm']
+
+        # Sort files by numerical order based on their suffix
+        dicom_files = sorted(
+            dicom_path.glob('MRIm*.dcm'),
+            key=lambda x: int(x.stem.replace('MRIm', ''))
+        )
+
+        images = [pydicom.dcmread(im).pixel_array.astype(float) for im in dicom_files if im.name != 'MRIm01.dcm']
         mrf_data = np.stack(images, axis=0)
         mrf_data = np.expand_dims(mrf_data, axis=2)  # Add a new axis to the array
         return xr.DataArray(mrf_data, dims=("MRF_cycles", "height", "slice", "width"))

@@ -34,8 +34,8 @@ class PipelineConfig:
     amide_test_slw = 2
 
     infer_config = infer.InferConfig(
-        kb_scale_fact = 500,
-        fb_scale_fact = 1e-2,
+        kb_scale_fact = 18,
+        fb_scale_fact = 3.5 / 100,
         use_cfsskss_inp = True
     )
     
@@ -205,7 +205,7 @@ def transfer_and_plot(
 def transfer(
     brain2test_mt, brain2test_amide, 
     mt_reconstructor, amide_reconstructor=None, 
-    infer_config=None, do_forward=True
+    infer_config=None, do_forward=True, simulation_mode='expm_bmmat'
     ):
     infer.infer_config = infer_config = infer_config or pipeline_config.infer_config 
     brain2test_mt.ds = 1
@@ -214,7 +214,7 @@ def transfer(
     mt_tissue_param_est, _mt_reconstructed_signal = \
         infer.infer(
             brain2test_mt, pool2predict='bc',
-            nn_predictor=mt_reconstructor, simulation_mode='isar2_c',
+            nn_predictor=mt_reconstructor, simulation_mode=simulation_mode,
             do_forward=do_forward
             )
     if amide_reconstructor is None:
@@ -238,8 +238,8 @@ def transfer(
 
 def plot_slice_rows_wrapper(transfer_res,
                             mt_fig_name, amide_fig_name='1',                            
-                            fss_lims=[0, 30], kss_lims=[0, 100],
-                            fs_lims=[0, 0.7], ks_lims=[0, 500], 
+                            fss_lims=[0, 30], kss_lims=[0, 105], # TODO: change limits
+                            fs_lims=[0, 3.5], ks_lims=[12, 20], # TODO: change limits
                             figsize=None, slices=None, do_err=True):
 
     brain2test_mt, mt_tissue_param_est, mt_reconstructed_signal, \

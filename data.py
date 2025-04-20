@@ -82,26 +82,26 @@ def get_w_abc(B0_base=B0_base_DEF, B0_shift_ppm=0, wb_ppm=wb_ppm_DEF, wc_ppm=wc_
 
 def get_seq(mt_seq_txt_fname = 'data/52_MT_with_M0_3T_.txt', 
             larg_seq_txt_fname = 'data/51_L_arg_with_M0_3T.txt',
+            # TODO use cest (vs larg) in consumer
             drop_first=False 
     ):
     colnames = ['TR_ms', 'B1_uT', 'dwRF_Hz', 'FA', 'Tsat_ms']    
     seq_df_MT = pd.read_csv(mt_seq_txt_fname, skiprows=1, sep='\s+', names=colnames)
     seq_df_MT['dwRF_Hz'] *= -1  # "right" is "negative ppm" by convention
 
-    seq_df_LARG = pd.read_csv(larg_seq_txt_fname, skiprows=1, sep='\s+', names=colnames) 
-    seq_df_AMIDE = pd.read_csv(larg_seq_txt_fname, skiprows=1, sep='\s+', names=colnames)    
-    LARG_TO_AMIDE = 3.5/3
-    seq_df_AMIDE['dwRF_Hz'] *= LARG_TO_AMIDE  # !!!
-        
+    seq_df_CEST = pd.read_csv(larg_seq_txt_fname, skiprows=1, sep='\s+', names=colnames)
+
     if drop_first:        
-        return {'mt': seq_df_MT[1:], 'amide': seq_df_AMIDE[1:], 'larg': seq_df_LARG[1:]}
+        return {'mt': seq_df_MT[1:], 'cest': seq_df_CEST[1:]}
     else:
         # fix the degenerate 1st iteration: no-saturation reference scan
-        for seq in [seq_df_AMIDE, seq_df_MT, seq_df_LARG]:
+        for seq in [seq_df_CEST, seq_df_MT]:
             seq.loc[0, 'Tsat_ms'] = 0
             seq.loc[0, 'dwRF_Hz'] = 10000
             seq.loc[0, 'B1_uT'] = 0.001
-        return {'mt': seq_df_MT, 'amide': seq_df_AMIDE, 'larg': seq_df_LARG}    
+        return {'mt': seq_df_MT, # 'amide': seq_df_AMIDE,
+                'amide': seq_df_CEST,  # TODO use cest in consumer
+                'cest': seq_df_CEST}
 
 
 def get_lh_sample(var2range_od, shape):

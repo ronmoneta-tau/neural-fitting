@@ -34,12 +34,12 @@ class InferConfig:
     # Parameter ranges for the "b" (aka CEST) pool
     # Set to L-arg values as default (phantom)
     # (!) change for Amide, NOE, etc.
-    fb_scale_fact: float = 1e-3  
-    kb_scale_fact: float = 500
+    fb_scale_fact: float = 3.5 / 100
+    kb_scale_fact: float = 18
 
     # Parameter ranges for the "c" (aka MT aka semisolid/ss) pool
-    fc_scale_fact: float = 0.3
-    kc_scale_fact: float = 100
+    fc_scale_fact: float = 32 /100
+    kc_scale_fact: float = 105
     
 infer_config = InferConfig()
 
