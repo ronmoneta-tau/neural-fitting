@@ -6,6 +6,8 @@ import os
 import cv2
 from pathlib import Path
 from get_paravision_t1_t2_map_ms import get_paravision_map_ms
+from b0_mapping_functions import z_spec_rearranger, wassr_b0_mapping
+
 
 class Inputs:
     def __init__(self, subject: Path, name: str):
@@ -14,16 +16,17 @@ class Inputs:
         self.subject_metadata = self.parse_scan_doc()
         self.t1_path = self.subject / f'{self.subject_metadata["t1map_number"]}'
         self.t2_path = self.subject / f'{self.subject_metadata["t2map_number"]}'
-        self.b0_path = self.subject / f'{self.subject_metadata["b0map_number"]}'
+        self.wasser_path = self.subject / f'{self.subject_metadata["b0map_number"]}'
         self.b1_path = self.subject / (self.subject_metadata["b1map_number"] if self.subject_metadata["b1map_number"] else "None")
         self.mt_path = self.subject / f'{self.subject_metadata["mt_number"]}'
         self.rnoe_path = self.subject / f'{self.subject_metadata["rNOE_number"]}'
         self.t1_wm_mask_path = self.subject / ''  # ignored for now
         self.t1_gm_mask_path = self.subject / ''  # ignored for now
-        self.roi_mask = self.load_roi_mask()
+        self.brain_mask = self.load_brain_mask()
+        self.roi_mask = self.get_roi_mask()
         self.t1_qmap = self.get_qmaps(self.t1_path)
         self.t2_qmap = self.get_qmaps(self.t2_path)
-        self.b0_map = self.load_auxiliary_data(self.b0_path / 'pdata/1/dicom', '02')  # TODO: Change to generic
+        self.b0_map = self.get_b0_map()
         self.b1_map = self.load_auxiliary_data(self.b1_path / 'pdata/1/dicom', '2')  # TODO: Change to generic
         self.mt_map = self.load_mrf_data(self.mt_path)
         self.rnoe_map = self.load_mrf_data(self.rnoe_path)
@@ -37,7 +40,7 @@ class Inputs:
                 'T2ms': self.t2_qmap,
                 'T1ms': self.t1_qmap,
                 'MT_data': self.mt_map,
-                'AMIDE_data': self.rnoe_map # TODO: Alex's code has AMIDE_data hardcoded, change when possible
+                'AMIDE_data': self.rnoe_map  # TODO: Alex's code has AMIDE_data hardcoded, change when possible
             }.items() if value is not None})
 
     def load_auxiliary_data(self, map_path: Path, echo: str) -> xr.DataArray:
@@ -72,14 +75,21 @@ class Inputs:
         mrf_data = np.expand_dims(mrf_data, axis=2)  # Add a new axis to the array
         return xr.DataArray(mrf_data, dims=("MRF_cycles", "height", "slice", "width"))
 
-    def load_roi_mask(self) -> xr.DataArray:
+    def load_brain_mask(self) -> np.array:
         """
-        Load the ROI mask and convert it to a DataArray.
+        Load the brain mask
+        :return: Brain mask
+        """
+        brain_mask = np.load(self.subject.parent.parent / "results" / self.name / "brain_mask.npy").astype(float)
+        brain_mask = cv2.resize(brain_mask, (64, 64), interpolation=cv2.INTER_NEAREST)
+        return brain_mask
+
+    def get_roi_mask(self) -> xr.DataArray:
+        """
+        Convert the brain mask to appropriate behaviour (nans) and converts it to a DataArray.
         :return: DataArray of the ROI mask
         """
-        roi_mask = np.load(self.subject.parent.parent / "results" / self.name / "brain_mask.npy").astype(float)
-        roi_mask = cv2.resize(roi_mask, (64, 64), interpolation=cv2.INTER_NEAREST)
-        roi_mask = np.ma.masked_equal(roi_mask, 0.).filled(np.nan) # Changes mask from boolean to 1./nan
+        roi_mask = np.ma.masked_equal(self.brain_mask, 0.).filled(np.nan)  # Changes mask from boolean to 1./nan
         roi_mask = np.expand_dims(roi_mask, axis=1)  # Add a new axis to the array
         return xr.DataArray(roi_mask, dims=("height", "slice", "width"))
 
@@ -170,8 +180,8 @@ class Inputs:
         df.to_csv(params_path, sep=' ', index=False, header=True)
 
         return params_path
-    
-    def get_qmaps(self,t_map_path: Path) -> xr.DataArray:
+
+    def get_qmaps(self, t_map_path: Path) -> xr.DataArray:
         """
         Generates quantitative map for T1/T2. Folder number 4 should be usd, but if doesn't exist, folder number 2 is used.
         :param t_map_path: Path to the T1/T2 map folder
@@ -184,6 +194,26 @@ class Inputs:
             qmap = get_paravision_map_ms(folder_4 / 'dicom')
         elif os.path.isdir(folder_2):
             qmap = get_paravision_map_ms(folder_2 / 'dicom')
-        
+
         qmap = np.expand_dims(qmap, axis=1)  # Add a new axis to the array
         return xr.DataArray(qmap, dims=("height", "slice", "width"))
+
+    def get_b0_map(self) -> np.array:
+        """
+        Creates B0 map from WASSER data
+        """
+        dicom_path = self.wasser_path / "pdata/1/dicom"
+
+        # Sort files by numerical order based on their suffix
+        dicom_files = sorted(dicom_path.glob('MRIm*.dcm'), key=lambda x: int(x.stem.replace('MRIm', '')))
+        images = [pydicom.dcmread(im).pixel_array.astype(float) for im in dicom_files]
+        b0_data = np.stack(images, axis=0)  # (22, 64, 64) - all WASSER images, including M0
+
+        m0_cest, z_spec_rearr = z_spec_rearranger(b0_data)
+        normalized_b0_data = z_spec_rearr / m0_cest
+
+        bo_map = wassr_b0_mapping(normalized_b0_data, self.brain_mask)
+        # convert bo_map values from hz to ppm
+        bo_map /= 298
+        bo_map = np.expand_dims(bo_map, axis=1)  # Add a new axis to the array
+        return xr.DataArray(bo_map, dims=("height", "slice", "width"))
