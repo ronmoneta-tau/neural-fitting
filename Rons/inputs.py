@@ -7,6 +7,7 @@ import cv2
 from pathlib import Path
 from get_paravision_t1_t2_map_ms import get_paravision_map_ms
 from b0_mapping_functions import z_spec_rearranger, wassr_b0_mapping
+from b1_mapping import calculate_b1_map
 
 
 class Inputs:
@@ -17,7 +18,8 @@ class Inputs:
         self.t1_path = self.subject / f'{self.subject_metadata["t1map_number"]}'
         self.t2_path = self.subject / f'{self.subject_metadata["t2map_number"]}'
         self.wasser_path = self.subject / f'{self.subject_metadata["b0map_number"]}'
-        self.b1_path = self.subject / (self.subject_metadata["b1map_number"] if self.subject_metadata["b1map_number"] else "None")
+        self.b1_path = self.subject / (self.subject_metadata["b1map_number"]
+                                       if self.subject_metadata["b1map_number"] else "None")
         self.mt_path = self.subject / f'{self.subject_metadata["mt_number"]}'
         self.rnoe_path = self.subject / f'{self.subject_metadata["rNOE_number"]}'
         self.t1_wm_mask_path = self.subject / ''  # ignored for now
@@ -27,7 +29,7 @@ class Inputs:
         self.t1_qmap = self.get_qmaps(self.t1_path)
         self.t2_qmap = self.get_qmaps(self.t2_path)
         self.b0_map = self.get_b0_map()
-        self.b1_map = self.load_auxiliary_data(self.b1_path / 'pdata/1/dicom', '2')  # TODO: Change to generic
+        self.b1_map = self.get_b1_map()
         self.mt_map = self.load_mrf_data(self.mt_path)
         self.rnoe_map = self.load_mrf_data(self.rnoe_path)
         self.mt_params_path = self.extract_mrf_params(self.mt_path, 'MT')
@@ -43,18 +45,18 @@ class Inputs:
                 'AMIDE_data': self.rnoe_map  # TODO: Alex's code has AMIDE_data hardcoded, change when possible
             }.items() if value is not None})
 
-    def load_auxiliary_data(self, map_path: Path, echo: str) -> xr.DataArray:
+    def get_orderd_DICOM_files(self, path: Path) -> list:
         """
-        Loads an echo and inflates it to be of shape (height, 4, width)
-        :param map_path: Path to the auxiliary maps
-        :param echo: Index of the echo to load
-        :return: DataArray of inflated echo of the auxiliary map
+        Get ordered DICOM files from a given path
+        :param path: Path to the DICOM files
+        :return: List of ordered DICOM files
         """
-        if "None" in str(map_path):
-            return None
-        echo = pydicom.dcmread(map_path / f'MRIm{echo}.dcm').pixel_array.astype(float)
-        echo = np.expand_dims(echo, axis=1)  # Add a new axis to the array
-        return xr.DataArray(echo, dims=("height", "slice", "width"))
+        dicom_path = path / "pdata/1/dicom"
+
+        # Sort files by numerical order based on their suffix
+        dicom_files = sorted(dicom_path.glob('MRIm*.dcm'), key=lambda x: int(x.stem.replace('MRIm', '')))
+        scans = [pydicom.dcmread(im).pixel_array.astype(float) for im in dicom_files]
+        return scans
 
     def load_mrf_data(self, mrf_path: Path) -> xr.DataArray:
         """
@@ -62,15 +64,9 @@ class Inputs:
         :param mrf_path: Path to the MRF maps
         :return: DataArray of inflated MRF images
         """
-        dicom_path = mrf_path / "pdata/1/dicom"
-
-        # Sort files by numerical order based on their suffix
-        dicom_files = sorted(
-            dicom_path.glob('MRIm*.dcm'),
-            key=lambda x: int(x.stem.replace('MRIm', ''))
-        )
-
-        images = [pydicom.dcmread(im).pixel_array.astype(float) for im in dicom_files if im.name != 'MRIm01.dcm']
+        images = self.get_orderd_DICOM_files(mrf_path)
+        # Exclude the first image (Dummy) from the MRF data
+        images.pop(0)
         mrf_data = np.stack(images, axis=0)
         mrf_data = np.expand_dims(mrf_data, axis=2)  # Add a new axis to the array
         return xr.DataArray(mrf_data, dims=("MRF_cycles", "height", "slice", "width"))
@@ -198,22 +194,34 @@ class Inputs:
         qmap = np.expand_dims(qmap, axis=1)  # Add a new axis to the array
         return xr.DataArray(qmap, dims=("height", "slice", "width"))
 
-    def get_b0_map(self) -> np.array:
+    def get_b0_map(self) -> xr.DataArray:
         """
         Creates B0 map from WASSER data
         """
-        dicom_path = self.wasser_path / "pdata/1/dicom"
-
-        # Sort files by numerical order based on their suffix
-        dicom_files = sorted(dicom_path.glob('MRIm*.dcm'), key=lambda x: int(x.stem.replace('MRIm', '')))
-        images = [pydicom.dcmread(im).pixel_array.astype(float) for im in dicom_files]
+        images = self.get_orderd_DICOM_files(self.wasser_path)
         b0_data = np.stack(images, axis=0)  # (22, 64, 64) - all WASSER images, including M0
 
         m0_cest, z_spec_rearr = z_spec_rearranger(b0_data)
         normalized_b0_data = z_spec_rearr / m0_cest
 
-        bo_map = wassr_b0_mapping(normalized_b0_data, self.brain_mask)
+        b0_map = wassr_b0_mapping(normalized_b0_data, self.brain_mask)
         # convert bo_map values from hz to ppm
-        bo_map /= 298
-        bo_map = np.expand_dims(bo_map, axis=1)  # Add a new axis to the array
-        return xr.DataArray(bo_map, dims=("height", "slice", "width"))
+        b0_map /= 298
+        b0_map = np.expand_dims(b0_map, axis=1)  # Add a new axis to the array
+        return xr.DataArray(b0_map, dims=("height", "slice", "width"))
+
+    def get_b1_map(self) -> xr.DataArray:
+        """
+        Creates B1 map from Double Spin echo sequence
+        """
+        echos = self.get_orderd_DICOM_files(self.b1_path)
+
+        if len(echos) < 2:
+            raise ValueError("Not enough images found for B1 mapping.")
+        if len(echos) > 2:
+            raise ValueError("Too many images found for B1 mapping.")
+
+        b1_map = calculate_b1_map(echos[0], echos[1], brain_mask=self.brain_mask, alpha1_deg=30, alpha2_deg=60)
+
+        b1_map = np.expand_dims(b1_map, axis=1)  # Add a new axis to the array
+        return xr.DataArray(b1_map, dims=("height", "slice", "width"))

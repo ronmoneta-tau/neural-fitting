@@ -239,7 +239,7 @@ def transfer(
 def plot_slice_rows_wrapper(transfer_res,
                             mt_fig_name, amide_fig_name='1',                            
                             fss_lims=[0, 30], kss_lims=[0, 105], # TODO: change limits
-                            fs_lims=[0, 3.5], ks_lims=[12, 20], # TODO: change limits
+                            fs_lims=[0, 3.5], ks_lims=[12, 18], # TODO: change limits
                             figsize=None, slices=None, do_err=True):
 
     brain2test_mt, mt_tissue_param_est, mt_reconstructed_signal, \

@@ -90,8 +90,7 @@ def get_seq(mt_seq_txt_fname = 'data/52_MT_with_M0_3T_.txt',
     seq_df_MT['dwRF_Hz'] *= -1  # "right" is "negative ppm" by convention
 
     seq_df_CEST = pd.read_csv(larg_seq_txt_fname, skiprows=1, sep='\s+', names=colnames)
-    seq_df_CEST['dwRF_Hz'] *= -1  # "right" is "negative ppm" by convention
-    
+
     if drop_first:        
         return {'mt': seq_df_MT[1:], 'cest': seq_df_CEST[1:]}
     else:
