@@ -37,12 +37,14 @@ class Inputs:
         self.dataset = xr.Dataset(
             {key: value for key, value in {
                 'roi_mask_nans': self.roi_mask,
-                'B1_fix_factor_map': self.b1_map if self.b1_map is not None else None,
+                'B1_fix_factor_map': self.b1_map if self.b1_map is not None else np.ones(self.roi_mask.shape),
                 'B0_shift_ppm_map': self.b0_map,
                 'T2ms': self.t2_qmap,
                 'T1ms': self.t1_qmap,
                 'MT_data': self.mt_map,
-                'AMIDE_data': self.rnoe_map  # TODO: Alex's code has AMIDE_data hardcoded, change when possible
+                'AMIDE_data': self.rnoe_map,  # TODO: Alex's code has AMIDE_data hardcoded, change when possible
+                'white_mask': xr.DataArray(np.zeros(self.roi_mask.shape), dims=("height", "slice", "width")),
+                'gray_mask': xr.DataArray(np.zeros(self.roi_mask.shape), dims=("height", "slice", "width"))
             }.items() if value is not None})
 
     def get_orderd_DICOM_files(self, path: Path) -> list:

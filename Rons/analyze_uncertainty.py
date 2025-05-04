@@ -133,7 +133,7 @@ def plot_empirical_nrmse_blob(
     ax, _x, _y, sli, 
     data_feed_mt, mt_tissue_param_est,
     data_feed_amide=None, amide=False, mt_sim_mode='expm_bmmat',
-    do_plot=True
+    do_plot=True, **kwargs
     ):
     if amide:
         signal = data_feed_amide.measured_normed_T[:, _x, sli, _y]  
@@ -142,7 +142,7 @@ def plot_empirical_nrmse_blob(
         max_df, max_dk = 0.012, 600
         _df, _dk = max_df/100, max_dk/100 
         local_dict_feed = dictbased_runner.get_dict(
-            use_cartesian=True, mt_or_amide='amide',
+            use_cartesian=True, mt_or_amide='amide',mt_sim_mode=mt_sim_mode,
             parameter_values_od=collections.OrderedDict({
                 'T1a_ms': np.array(1000/data_feed_mt.R1a_V[_x, sli, _y]),
                 'T2a_ms': np.array(1000/data_feed_mt.R2a_V[_x, sli, _y]),
@@ -153,7 +153,8 @@ def plot_empirical_nrmse_blob(
                 'fb_gt_T': np.arange(_df, max_df+_df, _df),
                 'kb_gt_T': np.arange(_dk, max_dk+_dk, _dk)
                 }),
-            shape=[int(max_df/_df), 1, int(max_dk/_dk)]
+            shape=[int(max_df/_df), 1, int(max_dk/_dk)],
+            **kwargs
             )
     else:
         signal = data_feed_mt.measured_normed_T[:, _x, sli, _y]  
@@ -172,7 +173,8 @@ def plot_empirical_nrmse_blob(
                 'fc_gt_T': np.arange(_df, max_df+_df, _df),
                 'kc_gt_T': np.arange(_dk, max_dk+_dk, _dk)
                 }),
-            shape=[int(max_df/_df), 1, int(max_dk/_dk)]
+            shape=[int(max_df/_df), 1, int(max_dk/_dk)],
+            **kwargs
             )
     
     dict_signal = local_dict_feed.normalize(local_dict_feed.measured_normed_T, 'l2')[:,:,0,:]

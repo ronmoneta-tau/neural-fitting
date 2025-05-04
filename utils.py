@@ -1190,6 +1190,10 @@ def viz_t1t2b0b1_sample_slices(data_xa, data_feed, sample=True):
     fig, axes = plt.subplots(5, len(slices2plot), figsize=(len(slices2plot) * 2.5 + 2, 12))
     plt.subplots_adjust(wspace=0, hspace=0)
 
+    # TODO: Rons change
+    if len(slices2plot) == 1:
+        axes = np.expand_dims(axes, axis=1)  # Ensure axes is 2D for consistent indexing
+
     for ii, sliceind in enumerate(slices2plot):  # range(data_feed.shape[1]):
         res = axes[0, ii].imshow(t1_map_log[10:-10, sliceind, 7:-7], vmin=min_t1log, vmax=max_t1log, cmap=cmc.lipari)
     cbar = plt.colorbar(res, shrink=0.8)
