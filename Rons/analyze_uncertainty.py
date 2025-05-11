@@ -143,7 +143,7 @@ def plot_empirical_nrmse_blob(
         _df, _dk = max_df/100, max_dk/100 
         local_dict_feed = dictbased_runner.get_dict(
             use_cartesian=True, mt_or_amide='amide',mt_sim_mode=mt_sim_mode,
-            parameter_values_od=collections.OrderedDict({
+            parameter_values_od=collections.OrderedDict({ # TODO: Ron change when doing config
                 'T1a_ms': np.array(1000/data_feed_mt.R1a_V[_x, sli, _y]),
                 'T2a_ms': np.array(1000/data_feed_mt.R2a_V[_x, sli, _y]),
                 'B0_shift_ppm_map': np.array(data_feed_mt.B0_shift_ppm_map[_x, sli, _y]),

@@ -30,16 +30,16 @@ class InferConfig:
     use_pred_B1_fix: bool = False
     use_pred_R2c_fix: bool = False
     use_pred_T2_fix: bool = False
-    
+    #TODO: Ron change when you do config
     # Parameter ranges for the "b" (aka CEST) pool
     # Set to L-arg values as default (phantom)
     # (!) change for Amide, NOE, etc.
-    fb_scale_fact: float = 3.5 / 100
-    kb_scale_fact: float = 18
+    fb_scale_fact: float = 2 / 100
+    kb_scale_fact: float = 102
 
     # Parameter ranges for the "c" (aka MT aka semisolid/ss) pool
-    fc_scale_fact: float = 32 /100
-    kc_scale_fact: float = 105
+    fc_scale_fact: float = 29 /100
+    kc_scale_fact: float = 102
     
 infer_config = InferConfig()
 
