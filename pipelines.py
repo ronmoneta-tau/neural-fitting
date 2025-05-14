@@ -235,17 +235,6 @@ def transfer(
     return (brain2test_mt, mt_tissue_param_est, _mt_reconstructed_signal,
             brain2test_amide, amide_tissue_param_est, _amide_reconstructed_signal)    
 
-
-def quick_histogram(pred:np.ndarray, value_range, title='Histogram of predictions'):
-    plt.figure(figsize=(8, 6))
-    plt.hist(pred.flatten(), bins=50, range = value_range, color='blue', alpha=0.7, edgecolor='black')
-    plt.title(title)
-    plt.xlabel('pred values')
-    plt.ylabel('Frequency')
-    plt.grid(True)
-    plt.show()
-    plt.close()
-
 def plot_slice_rows_wrapper(transfer_res,
                             mt_fig_name, amide_fig_name='1',                            
                             fss_lims=[4, 11], kss_lims=[40, 60], # TODO: change limits
@@ -256,11 +245,9 @@ def plot_slice_rows_wrapper(transfer_res,
         brain2test_amide, amide_tissue_param_est, amide_reconstructed_signal = transfer_res
 
     fss_pred = mt_tissue_param_est[f'fc_T'] * brain2test_mt.roi_mask_nans * 100
-    print(f"fss_pred mean and std: {np.nanmean(fss_pred):.3f} std: {np.nanstd(fss_pred):.3f}")
-    quick_histogram(fss_pred, (4,11),title='Histogram of fss predictions')
+    # print(f"fss_pred mean and std: {np.nanmean(fss_pred):.3f} std: {np.nanstd(fss_pred):.3f}")
     kss_pred = mt_tissue_param_est[f'kc_T'] * brain2test_mt.roi_mask_nans
-    print(f"kss_pred mean and std: {np.nanmean(kss_pred):.3f} std: {np.nanstd(kss_pred):.3f}")
-    quick_histogram(kss_pred, (40,60), title='Histogram of kss predictions')
+    # print(f"kss_pred mean and std: {np.nanmean(kss_pred):.3f} std: {np.nanstd(kss_pred):.3f}")
     err_3d = np.linalg.norm(mt_reconstructed_signal - brain2test_mt.measured_normed_T,
                             axis=0, ord=2) * brain2test_mt.roi_mask_nans
     # ! nontrivial if signal is normed-by-first
@@ -280,12 +267,10 @@ def plot_slice_rows_wrapper(transfer_res,
         # amide_tissue_param_est, amide_reconstructed_signal, _1, _2 = amide_res
         fss_pred = amide_tissue_param_est[f'fb_T'] * \
             brain2test_amide.roi_mask_nans * 100
-        print(f"fs_pred mean and std: {np.nanmean(fss_pred):.3f} std: {np.nanstd(fss_pred):.3f}")
-        quick_histogram(fss_pred, (0.2,0.7),title='Histogram of fss predictions')
+        # print(f"fs_pred mean and std: {np.nanmean(fss_pred):.3f} std: {np.nanstd(fss_pred):.3f}")
         kss_pred = amide_tissue_param_est[f'kb_T'] * \
             brain2test_amide.roi_mask_nans
-        print(f"ksw_pred mean and std: {np.nanmean(kss_pred):.3f} std: {np.nanstd(kss_pred):.3f}")
-        quick_histogram(kss_pred, (80,100),title='Histogram of ksw predictions')
+        # print(f"ksw_pred mean and std: {np.nanmean(kss_pred):.3f} std: {np.nanstd(kss_pred):.3f}")
         err_3d = np.linalg.norm(amide_reconstructed_signal - brain2test_amide.measured_normed_T,
                                 axis=0, ord=2) * brain2test_amide.roi_mask_nans
         # ! nontrivial if signal is normed-by-first
