@@ -30,7 +30,6 @@ class InferConfig:
     use_pred_B1_fix: bool = False
     use_pred_R2c_fix: bool = False
     use_pred_T2_fix: bool = False
-    #TODO: Ron change when you do config
     # Parameter ranges for the "b" (aka CEST) pool
     # Set to L-arg values as default (phantom)
     # (!) change for Amide, NOE, etc.

@@ -3,11 +3,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 import matplotlib.patches as patches
-from matplotlib.patches import Ellipse, Patch 
+from matplotlib.patches import Ellipse, Patch
 import jax.numpy as jnp
 from inputs import  Inputs
 from pathlib import Path
 import matplotlib.colors as mcolors
+from config import SimulationConfig, DataConfig, TrainingConfig, ROIConfig
+
 sys.path.append(str(os.getcwd()))
 import data, pipelines, utils, net, infer, simulation
 import analyze_uncertainty as au
@@ -24,28 +26,13 @@ def cutout_dataset(dataset, cutout_height, cutout_width):
 
     return data_xa_cutout
 
-def train_pipeline(data_feed_mt, data_feed_amide):
-
-    pipelines.pipeline_config.train_config.std_up_fact = 0.2
-    pipelines.pipeline_config.mt_lr = 0.01
-    pipelines.pipeline_config.mt_steps = 500
-    pipelines.pipeline_config.infer_config.kc_scale_fact = 80
-    pipelines.pipeline_config.train_config.auto_reduce_batch = False
-    pipelines.pipeline_config.train_config.tp_noise_augmentation_burn_in = 50
-    pipelines.pipeline_config.amide_patience = 100
-    net.MyMLP.sigmoid_scale_fac = 10  # priority for center of range
-    data_feed_mt.ds = 1
-    data_feed_mt.slw = 1
-    data_feed_amide.ds = 1
-    data_feed_amide.slw = 1
-
-
-    # pipelines.pipeline_config.train_config.tp_noise = False # try without the noise augmentation
-    # This should stay commented as it made the std later extremely large. seems like without it The network doesn't learn to predict uncertainty properly. and it defaults to predicting almost constant, large uncertainty values for all pixels
+def train_pipeline(mt_data, solute_data):
+    training_config = TrainingConfig()
+    training_config.apply(mt_data, solute_data)
 
     predictor_mt, predictor_amide = pipelines.run_train(
-        brain2train_mt=data_feed_mt,
-        brain2train_amide=data_feed_amide,
+        brain2train_mt=mt_data.data_feed,
+        brain2train_amide=solute_data.data_feed,
         ckpt_folder=os.path.abspath(f'./goo'),
         #do_amide=False,
         mt_sim_mode = 'expm_bmmat'
@@ -53,44 +40,38 @@ def train_pipeline(data_feed_mt, data_feed_amide):
 
     return predictor_mt, predictor_amide
 
-def inference_pipeline(data_feed, nn_predictor, pool2predict):
-    data_feed.ds = 1
-    tissue_params_est, pred_signal_normed_np = infer.infer(data_feed, nn_predictor=nn_predictor,do_forward=True, pool2predict=pool2predict)
+def inference_pipeline(solute_data:DataConfig):
+    solute_data.data_feed.ds = 1
+    tissue_param_est, pred_signal_normed_np = infer.infer(solute_data.data_feed, nn_predictor=solute_data.predictor,do_forward=True, pool2predict=solute_data.pool)
 
-    return tissue_params_est, pred_signal_normed_np
+    solute_data.f_values = tissue_param_est.get(f'f{solute_data.pool}_T', None)
+    solute_data.k_values = tissue_param_est.get(f'k{solute_data.pool}_T', None)
 
-def plot_tissue_params_and_error(data_feed, pred_signal_normed_np,tissue_params_est, solute_name):
-    if solute_name == 'MT':
-        f_values = tissue_params_est.get('fc_T', None)
-        k_values = tissue_params_est.get('kc_T', None)
-    elif solute_name == 'rNOE':
-        f_values = tissue_params_est.get('fb_T', None)
-        k_values = tissue_params_est.get('kb_T', None)
-    else:
-        raise ValueError("Unknown solute name. Expected 'MT' or 'rNOE'.")
+    return tissue_param_est, pred_signal_normed_np
 
+def plot_tissue_params_and_error(solute_data:DataConfig):
     plt.figure(figsize=(7, 3))
-    plt.suptitle(f'{solute_name} params')
+    plt.suptitle(f'{solute_data.name} params')
     plt.subplot(1,3,1)
-    plt.imshow(f_values.squeeze() * 100)
+    plt.imshow(solute_data.f_values.squeeze() * 100)
     plt.colorbar()
-    plt.title(f'{solute_name} fs values')
+    plt.title(f'{solute_data.name} fs values')
 
     plt.subplot(1,3,2)
-    plt.imshow(k_values.squeeze(), cmap='magma')
+    plt.imshow(solute_data.k_values.squeeze(), cmap='magma')
     plt.colorbar()
-    plt.title(f'{solute_name} ks values')
+    plt.title(f'{solute_data.name} ks values')
 
     plt.subplot(1,3,3)
-    
-    err, norm = calculate_error_map(data_feed, pred_signal_normed_np)
+
+    err, norm = calculate_error_map(solute_data.data_feed, solute_data.pred_signal_normed_np)
 
     cmap_nrmse = plt.cm.get_cmap("YlOrRd").copy()
     cmap_nrmse.set_bad('1.0')
     img0 = plt.imshow(err[:,0,:], norm=norm, cmap=cmap_nrmse) #'hot_r'); # plt.colorbar(img0)  # vmin=0, vmax=0.1,
     cbar = plt.colorbar(img0)
 
-    plt.savefig(f'./{solute_name}_error_map.png', dpi=200)
+    plt.savefig(f'./{solute_data.name}_error_map.png', dpi=200)
     plt.show()
 
 def calculate_error_map(data_feed, pred_signal_normed_np):
@@ -100,67 +81,54 @@ def calculate_error_map(data_feed, pred_signal_normed_np):
     norm = mcolors.BoundaryNorm(log_bins, ncolors=plt.get_cmap('hot_r').N, clip=True)
 
     return err, norm
-    
-def create_bound_maps(data_feed, tissue_params_est, solute_name, points_tumor, points_contralateral, sli=0):    
 
-    if solute_name == 'MT':
-        f_val = 100*tissue_params_est.get('fc_T', None)
-        k_val = tissue_params_est.get('kc_T', None)
-        is_amide=False
-    elif solute_name == 'rNOE':
-        f_val = 100*tissue_params_est.get('fb_T', None)
-        k_val = tissue_params_est.get('kb_T', None)
-        is_amide=True
-    else:
-        raise ValueError("Unknown solute name. Expected 'MT' or 'rNOE'.")
-    
+def create_bound_maps(solute_data, roi_config, sli=0):
     _, _, cov_nnpred_scaled, f_sigma, k_sigma, height, width, angle = \
-    au.get_post_estimates(tissue_params_est, data_feed.shape, is_amide=is_amide)
+    au.get_post_estimates(solute_data.tissue_param_est, solute_data.data_feed.shape, is_amide= (solute_data.name != 'MT'))
 
-    axes = au.plot_CI_maps(f_val[:,sli,:], f_sigma[:,sli,:], k_val[:,sli,:], k_sigma[:,sli,:], is_mt=not is_amide)
-    
-    points = points_contralateral + points_tumor
-    labels = [0]*len(points_contralateral) + [1]*len(points_tumor)
-    for jj, point in enumerate(points):
+    axes = au.plot_CI_maps(solute_data.f_values[:,sli,:] * 100, f_sigma[:,sli,:], solute_data.k_values[:,sli,:], k_sigma[:,sli,:], is_mt=(solute_data.name == 'MT'))
+
+    labels = [0]*len(roi_config.points_contralateral) + [1]*len(roi_config.points_tumor)
+    for jj, point in enumerate(roi_config.points):
         circle = patches.Circle((point[1], point[0]), 1, facecolor='none', edgecolor=['cyan','red'][labels[jj]], linewidth=2)
         axes[0, 1].add_patch(circle)
 
 
-    print("f_val stats (min, mean, max):", np.nanmin(f_val), np.nanmean(f_val), np.nanmax(f_val))
+    print("f_val stats (min, mean, max):", np.nanmin(solute_data.f_values), np.nanmean(solute_data.f_values), np.nanmax(solute_data.f_values))
     print("f_sigma stats (min, mean, max):", np.nanmin(f_sigma), np.nanmean(f_sigma), np.nanmax(f_sigma))
-    print("k_val stats (min, mean, max):", np.nanmin(k_val), np.nanmean(k_val), np.nanmax(k_val))
+    print("k_val stats (min, mean, max):", np.nanmin(solute_data.k_values), np.nanmean(solute_data.k_values), np.nanmax(solute_data.k_values))
     print("k_sigma stats (min, mean, max):", np.nanmin(k_sigma), np.nanmean(k_sigma), np.nanmax(k_sigma))
-    
-    plt.savefig(f'./{solute_name}_CI_maps.png', dpi=200)
-    plt.show()
-    
-    return f_val, k_val, height, width, angle, labels, cov_nnpred_scaled
 
-def create_ROIs_uncertainty_maps(points, f_est, k_est, width, height, angle, labels, soulte_name, sli = 0) -> None:
+    plt.savefig(f'./{solute_data.name}_CI_maps.png', dpi=200)
+    plt.show()
+    solute_data.height, solute_data.width, solute_data.angle, solute_data.labels, solute_data.cov_nnpred_scaled = height, width, angle, labels, cov_nnpred_scaled
+
+def create_ROIs_uncertainty_maps(solute_data, roi_config, sli = 0) -> None:
     ds = 1
-    is_mt = True
+    is_mt = (solute_data.name == 'MT')
+
     fig, ax = plt.subplots(figsize=(7, 3))
-    plt.xlim(0, 30)
-    plt.ylim(0, 150)
-    plt.xlabel(r'$\hat{f}_{ss}$ (%)' if is_mt else r'$\hat{f}_{s}   (%)$')
+    plt.xlim(*solute_data.f_lims)
+    plt.ylim(*solute_data.k_lims)
+    plt.xlabel(r'$\hat{f}_{ss}$ (%)' if is_mt else r'$\hat{f}_{s}$ (%)')
     plt.ylabel(r'$\hat{k}_{ss}\ (s^{-1})$' if is_mt else r'$\hat{k}_{s}\ (s^{-1})$')
-        
+
     for mu_f, mu_k, ew, eh, eangle, label in zip(
-        f_est[[p[0] for p in points], sli, [p[1] for p in points]].flatten()[::ds],
-        k_est[[p[0] for p in points], sli, [p[1] for p in points]].flatten()[::ds], 
-        width[[p[0] for p in points], sli, [p[1] for p in points]].flatten()[::ds], 
-        height[[p[0] for p in points], sli, [p[1] for p in points]].flatten()[::ds], 
-        angle[[p[0] for p in points], sli, [p[1] for p in points]].flatten()[::ds],
-        labels
+        solute_data.f_values[[p[0] for p in roi_config.points], sli, [p[1] for p in roi_config.points]].flatten()[::ds],
+        solute_data.k_values[[p[0] for p in roi_config.points], sli, [p[1] for p in roi_config.points]].flatten()[::ds],
+        solute_data.width[[p[0] for p in roi_config.points], sli, [p[1] for p in roi_config.points]].flatten()[::ds],
+        solute_data.height[[p[0] for p in roi_config.points], sli, [p[1] for p in roi_config.points]].flatten()[::ds],
+        solute_data.angle[[p[0] for p in roi_config.points], sli, [p[1] for p in roi_config.points]].flatten()[::ds],
+        solute_data.labels
     ):
         # (!) angle=0 is vertical (hence "height"), but atan(y,x)=atan(y/x) is w horizontal
         ellipse = Ellipse(
-            xy=(mu_f, mu_k), width=ew, height=eh, angle=eangle-90, edgecolor=['c','r'][label], 
+            xy=(mu_f, mu_k), width=ew, height=eh, angle=eangle-90, edgecolor=['c','r'][label],
             facecolor='none', linewidth=.5, zorder=0, alpha=0.5
         )
         ax.add_patch(ellipse)
         ellipse = Ellipse(
-            xy=(mu_f, mu_k), width=ew/2, height=eh/2, angle=eangle-90, edgecolor='none', 
+            xy=(mu_f, mu_k), width=ew/2, height=eh/2, angle=eangle-90, edgecolor='none',
             facecolor=['c','r'][label], alpha=0.2
         )
         ax.add_patch(ellipse)
@@ -170,75 +138,78 @@ def create_ROIs_uncertainty_maps(points, f_est, k_est, width, height, angle, lab
 
         # Add the legend to the plot
         ax.legend(handles=[contralateral_patch, tumor_patch], loc='upper right')
-    
-    plt.title(f'{soulte_name} Uncertainty ellipses for tumor and contralateral points')
-    plt.savefig(f'./{soulte_name}_regional_uncertainty_ellipses.png', dpi=200)
+
+    plt.title(f'{solute_data.name} Uncertainty ellipses for tumor and contralateral points')
+    plt.savefig(f'./{solute_data.name}_regional_uncertainty_ellipses.png', dpi=200)
     plt.show()
 
 
-def create_uncertainty_maps(data_feed_mt, mt_tissue_param_est, f_est, k_est, height, width, angle, labels, cov_nnpred_scaled, points, mt_params_path, rnoe_params_path, solute_name, data_feed_amide=None, amide=False, sli=0):
+def create_uncertainty_maps(solute_data, roi_config, inpt, auxiliary_mt_data = None, sli=0):
     _z = 0
 
-    for jj, (_x, _y) in enumerate(points):   
-        f_best_dotprod, k_best_dotprod, nrmse, _df, _dk = au.get_nrmse_grid(
-            None, _x, _y, _z, 
-            data_feed_mt, mt_tissue_param_est,
-            data_feed_amide=data_feed_amide, amide=amide,
-            mt_sim_mode='expm_bmmat', do_plot=False, mt_seq_txt_fname=mt_params_path, larg_seq_txt_fname=rnoe_params_path
-        )          
+    for jj, (_x, _y) in enumerate(roi_config.points):
+        if auxiliary_mt_data is not None:
+            f_best_dotprod, k_best_dotprod, nrmse, _df, _dk = au.get_nrmse_grid(
+                None, _x, _y, _z,
+                auxiliary_mt_data.data_feed, auxiliary_mt_data.tissue_param_est,
+                data_feed_amide=solute_data.data_feed, amide=True,
+                mt_sim_mode='expm_bmmat', do_plot=False, mt_seq_txt_fname=inpt.mt_params_path, larg_seq_txt_fname=inpt.rnoe_params_path
+            )
+        else:
+            f_best_dotprod, k_best_dotprod, nrmse, _df, _dk = au.get_nrmse_grid(
+                None, _x, _y, _z,
+                solute_data.data_feed, solute_data.tissue_param_est,
+                data_feed_amide=None, amide=False,mt_sim_mode='expm_bmmat', do_plot=False,
+                mt_seq_txt_fname=inpt.mt_params_path, larg_seq_txt_fname=inpt.rnoe_params_path
+            )
+
         maha1, maha2, posterior_cov, CR_area, CIk_x_CIf = au.viz_posteriors(
-            f_est[_x, sli, _y], k_est[_x, sli, _y], cov_nnpred_scaled[_x, sli, _y], 
-            width[_x, sli, _y], height[_x, sli, _y], angle[_x, sli, _y],
-            f_best_dotprod, k_best_dotprod, nrmse, _df, _dk,        
-            is_amide= amide, fontsize=14, # figsize=(6, 4),  # good w.o. marginals
+            solute_data.f_values[_x, sli, _y], solute_data.k_values[_x, sli, _y], solute_data.cov_nnpred_scaled[_x, sli, _y],
+            solute_data.width[_x, sli, _y], solute_data.height[_x, sli, _y], solute_data.angle[_x, sli, _y],
+            f_best_dotprod, k_best_dotprod, nrmse, _df, _dk,
+            is_amide= (solute_data.name != 'MT'), fontsize=14, # figsize=(6, 4),  # good w.o. marginals
             do_marginals=True, figsize=[7, 5], show_text=False, show_NN=True
-            )    
-        plt.title(f'Point: ({_x},{_y}). CR_area: {CR_area:.2f}', 
-              loc='center', 
+            )
+        plt.title(f'Point: ({_x},{_y}). CR_area: {CR_area:.2f}',
+              loc='center',
               pad=15)  # Increase the pad value for more spacing
-        
-        plt.suptitle(f'{solute_name} posterior distribution', fontsize=16)
+
+        plt.suptitle(f'{solute_data.name} posterior distribution', fontsize=16)
         # plt.tight_layout()
-        plt.savefig(f'./{solute_name}_posterior_pics_ind{jj}_{_x}_{_z}_{_y}.png', dpi=200)
+        plt.savefig(f'./{solute_data.name}_posterior_pics_ind{jj}_{_x}_{_z}_{_y}.png', dpi=200)
         plt.show()
-    
+
 
 def main():
-    data.B0_base_DEF = 7
-    simulation.num_flip_pulses = 1
-    simulation.flip_angle = 90 * jnp.pi / 180
-
-    simulation.tpulse_DEF = 2.5
-    simulation.tdelay_DEF = 0.1
-    simulation.n_pulses_DEF = 1
-    simulation.DO_SL = False
-
+    simulation_config = SimulationConfig()
+    simulation_config.apply()
     inpt = Inputs(Path('/home/ron/pediatric-tumor-mice/Pediatric tumor model_Nov2024/20241120_134917_OrPerlman_ped_tumor_immuno_C3_2R_5_1_3'), "C3_2R_2024-11-20")
-    data_xa = inpt.dataset
-    data.SlicesFeed.norm_type = 'l2'
-    data_xa_cutout = cutout_dataset(data_xa, cutout_height=slice(18, 42), cutout_width=slice(17, 50))
-    data_feed_mt = data.SlicesFeed.from_xarray(data_xa_cutout, mt_or_amide='mt',mt_seq_txt_fname=inpt.mt_params_path, larg_seq_txt_fname=inpt.rnoe_params_path)
-    data_feed_amide = data.SlicesFeed.from_xarray(data_xa_cutout, mt_or_amide='amide',mt_seq_txt_fname=inpt.mt_params_path, larg_seq_txt_fname=inpt.rnoe_params_path)
+    data_xa_cutout = cutout_dataset(inpt.dataset, cutout_height=slice(18, 42), cutout_width=slice(17, 50))
 
-    predictor_mt, predictor_amide = train_pipeline(data_feed_mt, data_feed_amide)
-    mt_tissue_param_est, mt_pred_signal_normed_np = inference_pipeline(data_feed_mt, predictor_mt, pool2predict='c')
+    mt_data = DataConfig('MT', data_xa_cutout, inpt)
+    rNOE_data = DataConfig('rNOE', data_xa_cutout, inpt)
 
-    data_feed_amide.fc_gt_T = mt_tissue_param_est['fc_T']
-    data_feed_amide.kc_gt_T = mt_tissue_param_est['kc_T']
-    amide_tissue_param_est, amide_pred_signal_normed_np = inference_pipeline(data_feed_amide, predictor_amide, pool2predict='b')
-    plot_tissue_params_and_error(data_feed_mt, mt_pred_signal_normed_np, mt_tissue_param_est, 'MT')
-    plot_tissue_params_and_error(data_feed_amide, amide_pred_signal_normed_np, amide_tissue_param_est, 'rNOE')
+    mt_data.apply_data_config(rNOE_data)
 
-    points_tumor = [[6, 6],[8, 7],[10, 7], [12, 8]]
-    points_contralateral = [[5, 25], [7, 26], [9, 25], [11, 25]]
+    mt_data.predictor, rNOE_data.predictor = train_pipeline(mt_data, rNOE_data)
 
-    mt_f_est, mt_k_est, mt_height, mt_width, mt_angle, mt_labels, mt_cov_nnpred_scaled = create_bound_maps(data_feed_mt, mt_tissue_param_est, "MT" ,points_tumor = [[6, 6],[8, 7],[10, 7], [12, 8]], points_contralateral = [[5, 25], [7, 26], [9, 25], [11, 25]])
-    rnoe_f_est, rnoe_k_est, rnoe_height, rnoe_width, rnoe_angle, rnoe_labels, rnoe_cov_nnpred_scaled = create_bound_maps(data_feed_amide, amide_tissue_param_est, "rNOE", points_tumor = [[6, 6],[8, 7],[10, 7], [12, 8]], points_contralateral = [[5, 25], [7, 26], [9, 25], [11, 25]])
-    create_ROIs_uncertainty_maps(points_contralateral + points_tumor, mt_f_est, mt_k_est, mt_width, mt_height, mt_angle, mt_labels, "MT")
-    create_ROIs_uncertainty_maps(points_contralateral + points_tumor, rnoe_f_est, rnoe_k_est, rnoe_width, rnoe_height, rnoe_angle, rnoe_labels, "rNOE")
+    mt_data.tissue_param_est, mt_data.pred_signal_normed_np = inference_pipeline(mt_data)
+    rNOE_data.update_ground_truth(mt_data.tissue_param_est)
+    rNOE_data.tissue_param_est, rNOE_data.pred_signal_normed_np = inference_pipeline(rNOE_data)
 
-    create_uncertainty_maps(data_feed_mt, mt_tissue_param_est, mt_f_est, mt_k_est, mt_height, mt_width, mt_angle, mt_labels, mt_cov_nnpred_scaled, points_contralateral + points_tumor, inpt.mt_params_path, inpt.rnoe_params_path, "MT", data_feed_amide=None, amide=False)
-    create_uncertainty_maps(data_feed_mt, mt_tissue_param_est, rnoe_f_est, rnoe_k_est, rnoe_height, rnoe_width, rnoe_angle, rnoe_labels, rnoe_cov_nnpred_scaled, points_contralateral + points_tumor, inpt.mt_params_path, inpt.rnoe_params_path, "rNOE", data_feed_amide=data_feed_amide, amide=True)
+    plot_tissue_params_and_error(mt_data)
+    plot_tissue_params_and_error(rNOE_data)
+
+    roi_config = ROIConfig()
+
+    create_bound_maps(mt_data, roi_config)
+    create_bound_maps(rNOE_data, roi_config)
+
+    create_ROIs_uncertainty_maps(mt_data, roi_config)
+    create_ROIs_uncertainty_maps(rNOE_data, roi_config)
+
+    create_uncertainty_maps(mt_data, roi_config, inpt, auxiliary_mt_data=None)
+    create_uncertainty_maps(rNOE_data, roi_config, inpt, auxiliary_mt_data=mt_data)
 
 
 if __name__ == "__main__":

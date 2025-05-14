@@ -1,6 +1,7 @@
 import jax.numpy as jnp
-from dataclasses import dataclass, field
-from typing import List
+from dataclasses import dataclass
+from inputs import Inputs
+from xarray import Dataset
 import data
 import simulation
 import pipelines
@@ -10,7 +11,8 @@ import net
 @dataclass
 class SimulationConfig:
     def __init__(self, B0_base: float = 7.0, num_flip_pulses: int = 1, flip_angle_deg: float = 90.0,
-                 t_pulse: float = 2.5, t_delay: float = 0.1, n_pulses: int = 1, do_spin_lock: bool = False):
+                 t_pulse: float = 2.5, t_delay: float = 0.1, n_pulses: int = 1, do_spin_lock: bool = False,
+                 simulation_type: str = 'expm_bmmat', norm_type: str = 'l2'):
         self.B0_base = B0_base
         self.num_flip_pulses = num_flip_pulses
         self.flip_angle_deg = flip_angle_deg  # in degrees, will be converted to radians
@@ -18,6 +20,8 @@ class SimulationConfig:
         self.t_delay = t_delay
         self.n_pulses = n_pulses
         self.do_spin_lock = do_spin_lock
+        self.simulation_type = simulation_type
+        self.norm_type = norm_type
 
     @property
     def flip_angle_rad(self) -> float:
@@ -31,6 +35,7 @@ class SimulationConfig:
         simulation.tdelay_DEF = self.t_delay
         simulation.n_pulses_DEF = self.n_pulses
         simulation.DO_SL = self.do_spin_lock
+        data.SlicesFeed.norm_type = self.norm_type
 
 
 @dataclass
@@ -47,7 +52,7 @@ class TrainingConfig:
         self.sigmoid_scale_fac = sigmoid_scale_fac
         self.tp_noise = tp_noise
 
-    def apply(self):
+    def apply(self, mt_data: 'DataConfig', solute_data: 'DataConfig'):
         pipelines.pipeline_config.train_config.std_up_fact = self.std_up_fact
         pipelines.pipeline_config.mt_lr = self.mt_lr
         pipelines.pipeline_config.mt_steps = self.mt_steps
@@ -56,54 +61,78 @@ class TrainingConfig:
         pipelines.pipeline_config.amide_patience = self.amide_patience
         pipelines.pipeline_config.train_config.tp_noise = self.tp_noise
         net.MyMLP.sigmoid_scale_fac = self.sigmoid_scale_fac
+        # pipelines.pipeline_config.train_config.tp_noise = False # try without the noise augmentation
+        # This should stay commented as it made the std later extremely large. seems like without it The network
+        # doesn't learn to predict uncertainty properly. and it defaults to predicting almost constant,
+        # large uncertainty values for all pixels
 
+        pipelines.pipeline_config.infer_config.fb_scale_fact = solute_data.f_scale_fact
+        pipelines.pipeline_config.infer_config.kb_scale_fact = solute_data.k_scale_fact
+        pipelines.pipeline_config.infer_config.fc_scale_fact = mt_data.f_scale_fact
+        pipelines.pipeline_config.infer_config.kc_scale_fact = mt_data.k_scale_fact
 
-@dataclass
-class InferenceConfig:
-    def __init__(self, scope: str):
-        self.scope = scope
-        self.pool = 'c' if scope == 'MT' else 'b'
-
-    def apply(self, data_feed: data.SlicesFeed, mt_tissue_param_est: {}):
-        if self.scope != 'MT':
-            data_feed.fc_gt_T = mt_tissue_param_est['fc_T']
-            data_feed.kc_gt_T = mt_tissue_param_est['kc_T']
+        mt_data.data_feed.ds = 1
+        mt_data.data_feed.slw = 1
+        solute_data.data_feed.ds = 1
+        solute_data.data_feed.slw = 1
 
 
 @dataclass
 class DataConfig:
-    def __init__(self, scope: str, norm_type: str = 'l2', ds: int = 1, slw: int = 1,
-                 cutout_height: slice = slice(18, 42), cutout_width: slice = slice(17, 50)):
-        self.scope = scope
-        self.norm_type = norm_type
-        self.ds = ds
-        self.slw = slw
-        self.cutout_height = cutout_height
-        self.cutout_width = cutout_width
-        data.SlicesFeed.norm_type = self.norm_type
+    def __init__(self, name: str, data_cutout: Dataset, inpt: Inputs):
+        self.name = name
 
-    def apply(self, data_feed: data.SlicesFeed):
-        data_feed.ds = self.ds
-        data_feed.slw = self.slw
+        if self.name == 'MT':
+            self.pool = 'c'
+            self.f_scale_fact = 29 / 100
+            self.k_scale_fact = 102
+            self.scope = 'mt'
+            self.ppm = -2.5
+            self.T2 = 0.04
+        else:
+            self.pool = 'b'
+            self.f_scale_fact = 2 / 100
+            self.k_scale_fact = 102
+            self.scope = 'amide'
+            self.ppm = -3.5
+            self.T2 = 5
+
+        self.data_feed = self.create_data_feed(data_cutout, inpt)
+        self.f_lims = [0, self.f_scale_fact * 100]
+        self.k_lims = [0, self.k_scale_fact]
+        self.predictor = None
+        self.tissue_param_est = None
+        self.pred_signal_normed_np = None
+        self.f_values = None
+        self.k_values = None
+        self.height = None
+        self.width = None
+        self.angle = None
+        self.labels = None
+        self.cov_nnpred_scaled = None
+
+    def create_data_feed(self, data_cutout: Dataset, inpt: Inputs):
+        return data.SlicesFeed.from_xarray(data_cutout, mt_or_amide=self.scope,
+                                           mt_seq_txt_fname=inpt.mt_params_path,
+                                           larg_seq_txt_fname=inpt.rnoe_params_path)
+
+    def update_ground_truth(self, tissue_param_est: {}):
+        self.data_feed.fc_gt_T = tissue_param_est['fc_T']
+        self.data_feed.kc_gt_T = tissue_param_est['kc_T']
+
+    def apply_data_config(self, other: 'DataConfig' = None):
+        data.wc_ppm_DEF = self.ppm # MT
+        data.T2c_ms_DEF = self.T2  # for MT
+
+        if other is not None:
+            data.wb_ppm_DEF = other.ppm
+            data.T2b_ms_DEF = other.T2
 
 
 @dataclass
 class ROIConfig:
-    points_tumor: List[List[int]] = field(default_factory=lambda: [[6, 6], [8, 7], [10, 7], [12, 8]])
-    points_contralateral: List[List[int]] = field(default_factory=lambda: [[5, 25], [7, 26], [9, 25], [11, 25]])
 
-
-# @dataclass
-# class Config:
-#     """Main configuration class for MT and rNOE experiments"""
-#     simulation: SimulationConfig = field(default_factory=SimulationConfig)
-#     training: TrainingConfig = field(default_factory=TrainingConfig)
-#     inference: InferenceConfig = field(default_factory=InferenceConfig)
-#     data: DataConfig = field(default_factory=DataConfig)
-#     roi: ROIConfig = field(default_factory=ROIConfig)
-#
-#     def apply_all(self):
-#         self.simulation.apply()
-#         self.training.apply()
-#         self.data.apply()
-
+    def __init__(self):
+        self.points_tumor = [[6, 6], [8, 7], [10, 7], [12, 8]]
+        self.points_contralateral = [[5, 25], [7, 26], [9, 25], [11, 25]]
+        self.points = self.points_contralateral + self.points_tumor
