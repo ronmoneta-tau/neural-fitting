@@ -8,14 +8,23 @@ import jax.numpy as jnp
 from inputs import  Inputs
 from pathlib import Path
 import matplotlib.colors as mcolors
-from config import SimulationConfig, DataConfig, TrainingConfig, ROIConfig
-
+from xarray import Dataset
 sys.path.append(str(os.getcwd()))
+from config import SimulationConfig, DataConfig, TrainingConfig, ROIConfig
 import data, pipelines, utils, net, infer, simulation
 import analyze_uncertainty as au
 
 
-def cutout_dataset(dataset, cutout_height, cutout_width):
+def cutout_dataset(dataset: Dataset, cutout_height: slice, cutout_width: slice) -> Dataset:
+    """
+    Cut out a specific region from the dataset.
+    Args:
+        dataset (Dataset): The input dataset.
+        cutout_height (slice): The slice object for the height dimension.
+        cutout_width (slice): The slice object for the width dimension.
+    Returns:
+        Dataset: The cutout dataset.
+    """
     data_xa_cutout = dataset.isel(height=cutout_height,width=cutout_width)
 
     plt.figure(figsize=(4,4))
@@ -26,7 +35,15 @@ def cutout_dataset(dataset, cutout_height, cutout_width):
 
     return data_xa_cutout
 
-def train_pipeline(mt_data, solute_data):
+def train_pipeline(mt_data: DataConfig, solute_data: DataConfig) -> tuple:
+    """
+    Train the model using the given data.
+    Args:
+        mt_data (DataConfig): The MT data configuration.
+        solute_data (DataConfig): The solute data configuration.
+    Returns:
+        tuple: The trained predictors for MT and solute data.    
+    """
     training_config = TrainingConfig()
     training_config.apply(mt_data, solute_data)
 
@@ -40,7 +57,14 @@ def train_pipeline(mt_data, solute_data):
 
     return predictor_mt, predictor_amide
 
-def inference_pipeline(solute_data:DataConfig):
+def inference_pipeline(solute_data:DataConfig) -> tuple:
+    """
+    Perform inference using the trained model.
+    Args:
+        solute_data (DataConfig): The solute data configuration.
+    Returns:
+        tuple: The tissue parameter estimates and the predicted normalized signal.
+    """
     solute_data.data_feed.ds = 1
     tissue_param_est, pred_signal_normed_np = infer.infer(solute_data.data_feed, nn_predictor=solute_data.predictor,do_forward=True, pool2predict=solute_data.pool)
 
@@ -49,7 +73,12 @@ def inference_pipeline(solute_data:DataConfig):
 
     return tissue_param_est, pred_signal_normed_np
 
-def plot_tissue_params_and_error(solute_data:DataConfig):
+def plot_tissue_params_and_error(solute_data:DataConfig) -> None:
+    """
+    Plot the tissue parameters and error maps.
+    Args:
+        solute_data (DataConfig): The solute data configuration.
+    """
     plt.figure(figsize=(7, 3))
     plt.suptitle(f'{solute_data.name} params')
     plt.subplot(1,3,1)
@@ -74,7 +103,15 @@ def plot_tissue_params_and_error(solute_data:DataConfig):
     plt.savefig(f'./{solute_data.name}_error_map.png', dpi=200)
     plt.show()
 
-def calculate_error_map(data_feed, pred_signal_normed_np):
+def calculate_error_map(data_feed: data.SlicesFeed, pred_signal_normed_np: np.ndarray) -> tuple:
+    """
+    Calculate the error map between the predicted and measured normalized signals.
+    Args:
+        data_feed (data.SlicesFeed): The data feed containing the measured normalized signal.
+        pred_signal_normed_np (np.ndarray): The predicted normalized signal.
+    Returns:
+        tuple: The error map and the normalization for visualization.
+    """
     # Visualize the error maps in a slightly more informative way
     err = np.linalg.norm(pred_signal_normed_np - data_feed.measured_normed_T, axis=0) / np.linalg.norm(data_feed.measured_normed_T, axis=0)
     log_bins = np.logspace(np.log10(1.), np.log10(20), num=12)/100  # logarithmic
@@ -82,7 +119,14 @@ def calculate_error_map(data_feed, pred_signal_normed_np):
 
     return err, norm
 
-def create_bound_maps(solute_data, roi_config, sli=0):
+def create_bound_maps(solute_data: DataConfig, roi_config: ROIConfig, sli:int=0) -> None:
+    """
+    Create bound maps for the given solute data and ROI configuration.  
+    Args:
+        solute_data (DataConfig): The solute data configuration.
+        roi_config (ROIConfig): The ROI configuration.
+        sli (int): The slice index to use for the bound maps.
+    """
     _, _, cov_nnpred_scaled, f_sigma, k_sigma, height, width, angle = \
     au.get_post_estimates(solute_data.tissue_param_est, solute_data.data_feed.shape, is_amide= (solute_data.name != 'MT'))
 
@@ -103,15 +147,22 @@ def create_bound_maps(solute_data, roi_config, sli=0):
     plt.show()
     solute_data.height, solute_data.width, solute_data.angle, solute_data.labels, solute_data.cov_nnpred_scaled = height, width, angle, labels, cov_nnpred_scaled
 
-def create_ROIs_uncertainty_maps(solute_data, roi_config, sli = 0) -> None:
+def create_ROIs_uncertainty_maps(solute_data: DataConfig, roi_config: ROIConfig, sli:int=0) -> None:
+    """
+    Create uncertainty maps for the regions of interest (ROIs) in the given solute data.
+    Args:
+        solute_data (DataConfig): The solute data configuration.
+        roi_config (ROIConfig): The ROI configuration.
+        sli (int): The slice index to use for the uncertainty maps.
+    """
     ds = 1
     is_mt = (solute_data.name == 'MT')
 
-    fig, ax = plt.subplots(figsize=(7, 3))
-    plt.xlim(*solute_data.f_lims)
-    plt.ylim(*solute_data.k_lims)
+    fig, ax = plt.subplots(figsize=(7, 5))
     plt.xlabel(r'$\hat{f}_{ss}$ (%)' if is_mt else r'$\hat{f}_{s}$ (%)')
     plt.ylabel(r'$\hat{k}_{ss}\ (s^{-1})$' if is_mt else r'$\hat{k}_{s}\ (s^{-1})$')
+
+    ellipses = []
 
     for mu_f, mu_k, ew, eh, eangle, label in zip(
         solute_data.f_values[[p[0] for p in roi_config.points], sli, [p[1] for p in roi_config.points]].flatten()[::ds],
@@ -123,15 +174,19 @@ def create_ROIs_uncertainty_maps(solute_data, roi_config, sli = 0) -> None:
     ):
         # (!) angle=0 is vertical (hence "height"), but atan(y,x)=atan(y/x) is w horizontal
         ellipse = Ellipse(
-            xy=(mu_f, mu_k), width=ew, height=eh, angle=eangle-90, edgecolor=['c','r'][label],
+            xy=(mu_f  * 100, mu_k), width=ew, height=eh, angle=eangle-90, edgecolor=['c','r'][label],
             facecolor='none', linewidth=.5, zorder=0, alpha=0.5
         )
         ax.add_patch(ellipse)
+        ellipses.append(ellipse)
+
         ellipse = Ellipse(
-            xy=(mu_f, mu_k), width=ew/2, height=eh/2, angle=eangle-90, edgecolor='none',
+            xy=(mu_f  * 100, mu_k), width=ew/2, height=eh/2, angle=eangle-90, edgecolor='none',
             facecolor=['c','r'][label], alpha=0.2
         )
         ax.add_patch(ellipse)
+        ellipses.append(ellipse)
+
          # Create legend handles for the two categories
         contralateral_patch = Patch(facecolor='cyan', alpha=0.2, edgecolor='cyan', label='Contralateral')
         tumor_patch = Patch(facecolor='red', alpha=0.2, edgecolor='red', label='Tumor')
@@ -139,12 +194,45 @@ def create_ROIs_uncertainty_maps(solute_data, roi_config, sli = 0) -> None:
         # Add the legend to the plot
         ax.legend(handles=[contralateral_patch, tumor_patch], loc='upper right')
 
+    # compute and apply limits
+    (xlim, ylim) = compute_limits_from_corners(ellipses, margin=0.1)
+    plt.xlim(*xlim)
+    plt.ylim(*ylim)
     plt.title(f'{solute_data.name} Uncertainty ellipses for tumor and contralateral points')
     plt.savefig(f'./{solute_data.name}_regional_uncertainty_ellipses.png', dpi=200)
     plt.show()
 
+def compute_limits_from_corners(ellipses: Ellipse, margin: float=0.05) -> tuple:
+    """
+    Compute the limits for the plot based on the corners of the ellipses.
+    Args:
+        ellipses (list): List of Ellipse objects.
+        margin (float): Margin to add to the limits.
+    Returns:
+        tuple: The x and y limits for the plot.
+    """
+    # Stack all 4 corners per ellipse into one big array
+    all_corners = np.vstack([e.get_corners() for e in ellipses])
+    xmin, ymin = all_corners.min(axis=0)
+    xmax, ymax = all_corners.max(axis=0)
+    
+    # pad by a fraction of the span
+    dx, dy = xmax - xmin, ymax - ymin
+    xmin, xmax = xmin - dx*margin, xmax + dx*margin
+    ymin, ymax = ymin - dy*margin, ymax + dy*margin
+    
+    return (xmin, xmax), (ymin, ymax)
 
-def create_uncertainty_maps(solute_data, roi_config, inpt, auxiliary_mt_data = None, sli=0):
+def create_uncertainty_maps(solute_data: DataConfig, roi_config: ROIConfig, inpt: Inputs, auxiliary_mt_data: DataConfig = None, sli:int=0) -> None:
+    """
+    Create uncertainty maps for the given solute data and ROI configuration.
+    Args:
+        solute_data (DataConfig): The solute data configuration. can be MT or Solute.
+        roi_config (ROIConfig): The ROI configuration.
+        inpt (Inputs): The input configuration.
+        auxiliary_mt_data (DataConfig, optional): The auxiliary MT data configuration.Needed only for Solute usage. otherwise defaults to None.
+        sli (int, optional): The slice index to use for the uncertainty maps. Defaults to 0.
+    """
     _z = 0
 
     for jj, (_x, _y) in enumerate(roi_config.points):
@@ -164,18 +252,18 @@ def create_uncertainty_maps(solute_data, roi_config, inpt, auxiliary_mt_data = N
             )
 
         maha1, maha2, posterior_cov, CR_area, CIk_x_CIf = au.viz_posteriors(
-            solute_data.f_values[_x, sli, _y], solute_data.k_values[_x, sli, _y], solute_data.cov_nnpred_scaled[_x, sli, _y],
+            solute_data.f_values[_x, sli, _y]  * 100, solute_data.k_values[_x, sli, _y], solute_data.cov_nnpred_scaled[_x, sli, _y],
             solute_data.width[_x, sli, _y], solute_data.height[_x, sli, _y], solute_data.angle[_x, sli, _y],
             f_best_dotprod, k_best_dotprod, nrmse, _df, _dk,
-            is_amide= (solute_data.name != 'MT'), fontsize=14, # figsize=(6, 4),  # good w.o. marginals
-            do_marginals=True, figsize=[7, 5], show_text=False, show_NN=True
+            is_amide= (solute_data.name != 'MT'), fontsize=10, # figsize=(6, 4),  # good w.o. marginals
+            do_marginals=True, figsize=[7 ,5], show_text=False, show_NN=True
             )
         plt.title(f'Point: ({_x},{_y}). CR_area: {CR_area:.2f}',
               loc='center',
               pad=15)  # Increase the pad value for more spacing
 
         plt.suptitle(f'{solute_data.name} posterior distribution', fontsize=16)
-        # plt.tight_layout()
+        plt.tight_layout()
         plt.savefig(f'./{solute_data.name}_posterior_pics_ind{jj}_{_x}_{_z}_{_y}.png', dpi=200)
         plt.show()
 

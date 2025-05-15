@@ -116,7 +116,7 @@ class DataConfig:
                                            mt_seq_txt_fname=inpt.mt_params_path,
                                            larg_seq_txt_fname=inpt.rnoe_params_path)
 
-    def update_ground_truth(self, tissue_param_est: {}):
+    def update_ground_truth(self, tissue_param_est: dict):
         self.data_feed.fc_gt_T = tissue_param_est['fc_T']
         self.data_feed.kc_gt_T = tissue_param_est['kc_T']
 
