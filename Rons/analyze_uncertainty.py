@@ -81,7 +81,7 @@ def plot_CI_maps(
     f_label_base = r'$\hat{f}_{ss}$' if is_mt else r'$\hat{f}_{s}$'
     k_label_base = r'$\hat{k}_{ss}$' if is_mt else r'$\hat{k}_{s}$'
     vmax_f = vmax_f or (30 if is_mt else 2)
-    vmax_k = vmax_k or (50 if is_mt else 150)
+    vmax_k = vmax_k or (90 if is_mt else 150)
 
     plot_map(axes[0, 0], f_est - 2*f_sigma, vmin_f, vmax_f, cmap_f, f_label_base +r'$ - 2\hat{\sigma}_f$  (%)')
     plot_map(axes[0, 1], f_est, vmin_f, vmax_f, cmap_f, f_label_base + '       (%)')
@@ -91,7 +91,7 @@ def plot_CI_maps(
     plot_map(axes[1, 2], k_est + 2*k_sigma, vmin_k, vmax_k, cmap_k, k_label_base +r' + 2$\hat{\sigma}_k  (s^{-1})$')
     for ax in axes.flatten():
         utils.remove_spines(ax)    
-    return axes
+    return fig, axes
 
 
 def get_nrmse_grid(
@@ -99,8 +99,8 @@ def get_nrmse_grid(
     data_feed_mt, mt_tissue_param_est,
     data_feed_amide=None, amide=False, mt_sim_mode='expm_bmmat',
     do_plot=True, loc_dict_res=100,
-    max_f_mt=.03, max_k_mt=100,
-    max_f_amide=0.02, max_k_amide=100, **kwargs
+    max_f_mt=.3, max_k_mt=102,
+    max_f_amide=0.02, max_k_amide=102, **kwargs
     ):
     """
         Implements our per-voxel likelihood-mapping method, by creating a local specialized dictionary, 
@@ -139,7 +139,7 @@ def get_nrmse_grid(
                 'fb_gt_T': np.arange(_df, max_f_amide+_df, _df),
                 'kb_gt_T': np.arange(_dk, max_k_amide+_dk, _dk)
                 }),
-            shape=[int(max_f_amide/_df), 1, int(max_k_amide/_dk)], mt_seq_txt_fname=kwargs['mt_seq_txt_fname'], larg_seq_txt_fname=kwargs['larg_seq_txt_fname']
+            shape=[loc_dict_res, 1, loc_dict_res], mt_seq_txt_fname=kwargs['mt_seq_txt_fname'], larg_seq_txt_fname=kwargs['larg_seq_txt_fname']
             )
     else:
         signal = data_feed_mt.measured_normed_T[:, _x, sli, _y]                  
@@ -156,7 +156,7 @@ def get_nrmse_grid(
                 'fc_gt_T': np.arange(_df, max_f_mt+_df, _df),
                 'kc_gt_T': np.arange(_dk, max_k_mt+_dk, _dk)
                 }),
-            shape=[int(max_f_mt/_df), 1, int(max_k_mt/_dk)], mt_seq_txt_fname=kwargs['mt_seq_txt_fname'], larg_seq_txt_fname=kwargs['larg_seq_txt_fname']
+            shape=[loc_dict_res, 1, loc_dict_res], mt_seq_txt_fname=kwargs['mt_seq_txt_fname'], larg_seq_txt_fname=kwargs['larg_seq_txt_fname']
             )
     
     dict_signal = local_dict_feed.normalize(local_dict_feed.measured_normed_T, 'l2')[:,:,0,:]
@@ -217,7 +217,7 @@ def viz_posteriors(
     f_best_dotprod, k_best_dotprod, nrmse, _df, _dk, n_meas=30,
     is_amide=False, 
     ax=None, figsize=(6, 4), fontsize=14, 
-    do_marginals=True, show_text=True, show_NN=True,
+    do_marginals=True, show_text=True, show_NN=True, loc_dict_res = 100
 ):
     """
         Compute and visualize the reference posterior distribution's Point Spread Function (PDF), 
@@ -282,10 +282,10 @@ def viz_posteriors(
     pdf = np.exp(log_likelihood) * prior
     pdf /= np.sum(pdf)
     if False: # debug the route to PDF if needed
-        plt.imshow(nrmse, origin='lower', aspect='auto', extent=[0, _df*100*100, 0, _dk*100], vmin=np.min(nrmse), vmax=1.5*np.min(nrmse), cmap='hot'); plt.colorbar()
-        plt.imshow( np.clip(log_likelihood, -4, 0), origin='lower', aspect='auto', extent=[0, _df*100*100, 0, _dk*100], cmap='hot'); plt.colorbar()
+        plt.imshow(nrmse, origin='lower', aspect='auto', extent=[0, _df*100*loc_dict_res, 0, _dk*loc_dict_res], vmin=np.min(nrmse), vmax=1.5*np.min(nrmse), cmap='hot'); plt.colorbar()
+        plt.imshow( np.clip(log_likelihood, -4, 0), origin='lower', aspect='auto', extent=[0, _df*100*loc_dict_res, 0, _dk*loc_dict_res], cmap='hot'); plt.colorbar()
     # transpose so that f is the x-axis and k is the y-axis
-    imsh = ax.imshow(pdf.T/np.max(pdf), origin='lower', aspect='auto', extent=[0, _df*100*100, 0, _dk*100], cmap='hot'); 
+    imsh = ax.imshow(pdf.T/np.max(pdf), origin='lower', aspect='auto', extent=[0, _df*100*loc_dict_res, 0, _dk*loc_dict_res], cmap='hot');
     if not do_marginals:
         cbar = plt.colorbar(); 
     else:
@@ -320,7 +320,7 @@ def viz_posteriors(
             levels=[nrmse_95cr_th], 
             colors=['magenta'], 
             linewidths=[2],
-            extent=[0, _df*100*100, 0, _dk*100]
+            extent=[0, _df*100*loc_dict_res, 0, _dk*loc_dict_res]
         )
     CR_area = np.sum(nrmse < nrmse_95cr_th)  # in samples 
     
@@ -345,33 +345,33 @@ def viz_posteriors(
             loc='upper right', fontsize=10
         )
         
-    df_grid = 100*_df*np.arange(0, 100)[:   , None]
-    dk_grid =     _dk*np.arange(0, 100)[None, :   ]
+    df_grid = 100*_df*np.arange(0, loc_dict_res)[:   , None]
+    dk_grid =     _dk*np.arange(0, loc_dict_res)[None, :   ]
 
     if do_marginals:
         marg_f = np.sum(pdf, axis=1)
         marg_f_cdf = np.cumsum(marg_f)
         marg_k = np.sum(pdf, axis=0)
         marg_k_cdf = np.cumsum(marg_k)
-        ax_marg_x.fill_between(x=100*_df*np.arange(0, 100), y1=[0]*100, y2=marg_f, color='gray', alpha=0.5)                        
-        ax_marg_y.fill_betweenx(y=_dk*np.arange(0, 100), x2=marg_k, x1=[0]*100, color='gray', alpha=0.5)                
+        ax_marg_x.fill_between(x=100*_df*np.arange(0, loc_dict_res), y1=[0]*loc_dict_res, y2=marg_f, color='gray', alpha=0.5)
+        ax_marg_y.fill_betweenx(y=_dk*np.arange(0, loc_dict_res), x2=marg_k, x1=[0]*loc_dict_res, color='gray', alpha=0.5)
         ax_marg_y.invert_xaxis()                
         utils.remove_spines(ax_marg_y)
         utils.remove_spines(ax_marg_x)        
         f_975 = _df*100*np.searchsorted(marg_f_cdf, 97.5/100)
         f_025 = _df*100*np.searchsorted(marg_f_cdf, 2.5/100)                                     
-        ax.plot((f_025, f_025), (0, _dk*100), 'w--', alpha=0.2)
-        ax.plot((f_975, f_975), (0, _dk*100), 'w--', alpha=0.2)
+        ax.plot((f_025, f_025), (0, _dk*loc_dict_res), 'w--', alpha=0.2)
+        ax.plot((f_975, f_975), (0, _dk*loc_dict_res), 'w--', alpha=0.2)
         k_975 = _dk*np.searchsorted(marg_k_cdf, 97.5/100)
         k_025 = _dk*np.searchsorted(marg_k_cdf, 2.5/100)              
-        ax.plot((0, _df*100*100), (k_025, k_025), 'w--', alpha=0.2)
-        ax.plot((0, _df*100*100), (k_975, k_975), 'w--', alpha=0.2)        
-        CIk_x_CIf = (k_975 - k_025) * (f_975 - f_025) / (100 * _df * _dk)        
+        ax.plot((0, _df*100*loc_dict_res), (k_025, k_025), 'w--', alpha=0.2)
+        ax.plot((0, _df*100*loc_dict_res), (k_975, k_975), 'w--', alpha=0.2)
+        CIk_x_CIf = (k_975 - k_025) * (f_975 - f_025) / (loc_dict_res * _df * _dk)
         
     # === FG: Grid --> Gauss ===    
     f_posterior_mu, k_posterior_mu = np.sum(pdf * df_grid), np.sum(pdf * dk_grid) # _dk*np.arange(0, 100)[:, None])
     # full-grid
-    delta_vec_grid = np.stack((df_grid.repeat(100, axis=1) - f_posterior_mu, dk_grid.repeat(100, axis=0) - k_posterior_mu), axis=-1) #  [...,None]
+    delta_vec_grid = np.stack((df_grid.repeat(loc_dict_res, axis=1) - f_posterior_mu, dk_grid.repeat(loc_dict_res, axis=0) - k_posterior_mu), axis=-1) #  [...,None]
     posterior_cov = (pdf[..., None, None] * delta_vec_grid[..., None] @ delta_vec_grid[..., None, :]).sum(axis=0).sum(axis=0)
     mahalanobis_NNmu_FGdist = np.sqrt( diff.T @ np.linalg.inv(posterior_cov) @ diff )
     

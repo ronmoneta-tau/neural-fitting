@@ -2,6 +2,7 @@ import jax.numpy as jnp
 from dataclasses import dataclass
 from inputs import Inputs
 from xarray import Dataset
+from pathlib import Path
 import data
 import simulation
 import pipelines
@@ -10,7 +11,7 @@ import net
 
 @dataclass
 class SimulationConfig:
-    def __init__(self, B0_base: float = 7.0, num_flip_pulses: int = 1, flip_angle_deg: float = 90.0,
+    def __init__(self, B0_base: int = 7, num_flip_pulses: int = 1, flip_angle_deg: float = 90.0,
                  t_pulse: float = 2.5, t_delay: float = 0.1, n_pulses: int = 1, do_spin_lock: bool = False,
                  simulation_type: str = 'expm_bmmat', norm_type: str = 'l2'):
         self.B0_base = B0_base
@@ -79,7 +80,7 @@ class TrainingConfig:
 
 @dataclass
 class DataConfig:
-    def __init__(self, name: str, data_cutout: Dataset, inpt: Inputs):
+    def __init__(self, name: str, data_cutout: Dataset, inpt: Inputs, figs_path: Path):
         self.name = name
 
         if self.name == 'MT':
@@ -100,6 +101,8 @@ class DataConfig:
         self.data_feed = self.create_data_feed(data_cutout, inpt)
         self.f_lims = [0, self.f_scale_fact * 100]
         self.k_lims = [0, self.k_scale_fact]
+        self.fig_path = figs_path / self.name
+        self.fig_path.mkdir(parents=True, exist_ok=True)
         self.predictor = None
         self.tissue_param_est = None
         self.pred_signal_normed_np = None

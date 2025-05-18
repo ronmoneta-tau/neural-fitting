@@ -58,7 +58,7 @@ def get_dict(
 def train_on_dict(bsf_lhsynth, pool2predict='c', epochs=50):
     infer.infer_config = pipelines.pipeline_config.infer_config
     infer.infer_config.use_cfsskss_inp = False
-    infer.infer_config.kc_scale_fact = 100
+    # infer.infer_config.kc_scale_fact = 100
     train.train_config = pipelines.pipeline_config.train_config
     train.train_config.patience=100  
     train.train_config.tp_noise = False

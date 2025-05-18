@@ -468,11 +468,11 @@ def print_latex_basic_stats_fk_gw(data, tp, mask_th=0.9):
         mask[mask == 0] = np.nan
 
         string = ''
-        tmp = 100 * (mask * tp['fc_T']).flatten();
+        tmp = 100 * (mask * tp['fc_T']).flatten()
         tmp = tmp[~np.isnan(tmp)]
         string += f"f_{{ss}}={tmp.mean():.2f}\pm{tmp.std():.2f}\ (\%),\ "
 
-        tmp = (mask * tp['kc_T']).flatten();
+        tmp = (mask * tp['kc_T']).flatten()
         tmp = tmp[~np.isnan(tmp)]
         string += f"k_{{ss}}={tmp.mean():.1f}\pm{tmp.std():.1f}\ (s^{{-1}}),\ "
 
@@ -480,7 +480,7 @@ def print_latex_basic_stats_fk_gw(data, tp, mask_th=0.9):
         tmp = tmp[~np.isnan(tmp)]
         string += f"f_{{s}}={tmp.mean():.2f}\pm{tmp.std():.2f}\ (\%),\ "
 
-        tmp = (mask * tp['kb_T']).flatten();
+        tmp = (mask * tp['kb_T']).flatten()
         tmp = tmp[~np.isnan(tmp)]
         string += f"k_{{s}}={tmp.mean():.1f}\pm{tmp.std():.1f}\ (s^{{-1}})"
         print(tissue_type)
@@ -1244,7 +1244,7 @@ def viz_t1t2b0b1_sample_slices(data_xa, data_feed, sample=True):
     # plt.tight_layout()
 
 
-def fancy_histogram(err, figsize=(7, 3)):
+def fancy_histogram(err, title, figsize=(7, 3)):
     err[err == 0] = np.nan
     sns.set(style="whitegrid")
     sns.set_context("talk", font_scale=0.8)  # 1.2
@@ -1262,8 +1262,11 @@ def fancy_histogram(err, figsize=(7, 3)):
     plt.text(median_val + 0.03, plt.ylim()[1] * 0.8, f'Median: {median_val:.3f}', color='b', ha='center')
     plt.text(perc_95_val + 0.044, plt.ylim()[1] * 0.6, f'95th Percentile: {perc_95_val:.3f}', color='r', ha='center')
     plt.legend()
+    plt.title(title)
     plt.tight_layout()
     plt.rcdefaults()
+    plt.show()
+    plt.close()
 
 
 def compare_fk_preds(bsf, estimated_params, pool='c'):
