@@ -22,6 +22,7 @@ class Inputs:
                                        if self.subject_metadata["b1map_number"] else "None")
         self.mt_path = self.subject / f'{self.subject_metadata["mt_number"]}'
         self.rnoe_path = self.subject / f'{self.subject_metadata["rNOE_number"]}'
+        self.amide_path = self.subject / f'{self.subject_metadata["amide_number"]}'
         self.t1_wm_mask_path = self.subject / ''  # ignored for now
         self.t1_gm_mask_path = self.subject / ''  # ignored for now
         self.brain_mask = self.load_brain_mask()
@@ -32,8 +33,10 @@ class Inputs:
         self.b1_map = self.get_b1_map()
         self.mt_map = self.load_mrf_data(self.mt_path)
         self.rnoe_map = self.load_mrf_data(self.rnoe_path)
+        self.amide_map = self.load_mrf_data(self.amide_path)
         self.mt_params_path = self.extract_mrf_params(self.mt_path, 'MT')
         self.rnoe_params_path = self.extract_mrf_params(self.rnoe_path, 'rNOE')
+        self.amide_params_path = self.extract_mrf_params(self.amide_path, 'Amide')
         self.dataset = xr.Dataset(
             {key: value for key, value in {
                 'roi_mask_nans': self.roi_mask,
@@ -42,7 +45,7 @@ class Inputs:
                 'T2ms': self.t2_qmap,
                 'T1ms': self.t1_qmap,
                 'MT_data': self.mt_map,
-                'AMIDE_data': self.rnoe_map,  # TODO: Alex's code has AMIDE_data hardcoded, change when possible
+                'AMIDE_data': self.amide_map,  # TODO: Alex's code has AMIDE_data hardcoded, change when possible
                 'white_mask': xr.DataArray(np.zeros(self.roi_mask.shape), dims=("height", "slice", "width")),
                 'gray_mask': xr.DataArray(np.zeros(self.roi_mask.shape), dims=("height", "slice", "width"))
             }.items() if value is not None})
@@ -123,7 +126,8 @@ class Inputs:
                 'b0map_number': scan_doc.get('wasser', None),
                 'b1map_number': scan_doc.get('B1map', None),
                 'mt_number': scan_doc.get('52_MT', None),
-                'rNOE_number': scan_doc.get('51_rnoe', None)
+                'rNOE_number': scan_doc.get('51_rnoe', None),
+                'amide_number': scan_doc.get('51_Amide', None)
             }
         return subject_metadata
 

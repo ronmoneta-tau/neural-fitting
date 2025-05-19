@@ -85,18 +85,18 @@ class DataConfig:
 
         if self.name == 'MT':
             self.pool = 'c'
-            self.f_scale_fact = 29 / 100
-            self.k_scale_fact = 102
+            self.f_scale_fact = 30 / 100
+            self.k_scale_fact = 150
             self.scope = 'mt'
             self.ppm = -2.5
             self.T2 = 0.04
         else:
             self.pool = 'b'
-            self.f_scale_fact = 2 / 100
-            self.k_scale_fact = 102
+            self.f_scale_fact = 1.2 / 100
+            self.k_scale_fact = 400
             self.scope = 'amide'
-            self.ppm = -3.5
-            self.T2 = 5
+            self.ppm = 3.5
+            self.T2 = 1
 
         self.data_feed = self.create_data_feed(data_cutout, inpt)
         self.f_lims = [0, self.f_scale_fact * 100]
@@ -115,21 +115,20 @@ class DataConfig:
         self.cov_nnpred_scaled = None
 
     def create_data_feed(self, data_cutout: Dataset, inpt: Inputs):
+        if self.scope == 'mt': # TODO: this hack doesn't work atm, still need to manually change on data.py
+            data.wc_ppm_DEF = self.ppm  # MT
+            data.T2c_ms_DEF = self.T2  # for MT
+        else:
+            data.wb_ppm_DEF = self.ppm
+            data.T2b_ms_DEF = self.T2
+
         return data.SlicesFeed.from_xarray(data_cutout, mt_or_amide=self.scope,
                                            mt_seq_txt_fname=inpt.mt_params_path,
-                                           larg_seq_txt_fname=inpt.rnoe_params_path)
+                                           larg_seq_txt_fname=inpt.amide_params_path)
 
     def update_ground_truth(self, tissue_param_est: dict):
         self.data_feed.fc_gt_T = tissue_param_est['fc_T']
         self.data_feed.kc_gt_T = tissue_param_est['kc_T']
-
-    def apply_data_config(self, other: 'DataConfig' = None):
-        data.wc_ppm_DEF = self.ppm # MT
-        data.T2c_ms_DEF = self.T2  # for MT
-
-        if other is not None:
-            data.wb_ppm_DEF = other.ppm
-            data.T2b_ms_DEF = other.T2
 
 
 @dataclass

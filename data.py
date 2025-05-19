@@ -20,8 +20,8 @@ import pyDOE
 gamma = 42.58 * 2*np.pi * 1e6   # gamma' = 42.58 MHz/T
 B0_base_DEF = 7.  # TESLA
 wc_ppm_DEF = -2.5    # MT  
-wb_ppm_DEF = -3.5  # rNOE
-T2b_ms_DEF = 5 # for rNOE
+wb_ppm_DEF = 3.5  # rNOE
+T2b_ms_DEF = 1 # for rNOE
 # MT: 10us w Superlorentzian shape approximated by 40us Lorentzian (Zaiss2022, Perlman2022)
 T2c_ms_DEF = 0.04  # for MT
 
