@@ -1,3 +1,4 @@
+import re
 import numpy as np
 import xarray as xr
 import pandas as pd
@@ -5,27 +6,31 @@ import pydicom
 import os
 import cv2
 from pathlib import Path
+from Rons.Parsers import parse_scan_doc
 from get_paravision_t1_t2_map_ms import get_paravision_map_ms
 from b0_mapping_functions import z_spec_rearranger, wassr_b0_mapping
 from b1_mapping import calculate_b1_map
 
 
-class Inputs:
-    def __init__(self, subject: Path, name: str):
-        self.subject = subject
-        self.name = name
-        self.subject_metadata = self.parse_scan_doc()
-        self.t1_path = self.subject / f'{self.subject_metadata["t1map_number"]}'
-        self.t2_path = self.subject / f'{self.subject_metadata["t2map_number"]}'
-        self.wasser_path = self.subject / f'{self.subject_metadata["b0map_number"]}'
-        self.b1_path = self.subject / (self.subject_metadata["b1map_number"]
-                                       if self.subject_metadata["b1map_number"] else "None")
-        self.mt_path = self.subject / f'{self.subject_metadata["mt_number"]}'
-        self.rnoe_path = self.subject / f'{self.subject_metadata["rNOE_number"]}'
-        self.amide_path = self.subject / f'{self.subject_metadata["amide_number"]}'
-        self.t1_wm_mask_path = self.subject / ''  # ignored for now
-        self.t1_gm_mask_path = self.subject / ''  # ignored for now
-        self.brain_mask = self.load_brain_mask()
+class MiceData:
+    def __init__(self, scans_path: Path, working_path: Path):
+        # self.name = name
+        # self.output_dir = output_dir
+        # self.name = f"{self.cage}_{self.marking}"
+        # self.working_path = f"{self.name}_{self.date.date()}"
+        self.scans_metadata = parse_scan_doc(scans_path)
+        self.t1_path = scans_path / f'{self.scans_metadata["t1map_number"]}'
+        self.t2_path = scans_path / f'{self.scans_metadata["t2map_number"]}'
+        self.wasser_path = scans_path / f'{self.scans_metadata["b0map_number"]}'
+        self.b1_path = scans_path / (self.scans_metadata["b1map_number"] if self.scans_metadata["b1map_number"] else "None")
+        self.mt_path = scans_path / f'{self.scans_metadata["mt_number"]}'
+        self.rnoe_path = scans_path / f'{self.scans_metadata["rnoe_number"]}'
+        self.amide_path = scans_path / f'{self.scans_metadata["amide_number"]}'
+        self.t1_wm_mask_path = scans_path / ''  # ignored for now
+        self.t1_gm_mask_path = scans_path / ''  # ignored for now
+        self.brain_mask = self.load_mask(scans_path, working_path, 'brain_mask.npy')
+        self.tumor_mask = self.load_mask(scans_path, working_path, 'tumor_mask.npy')
+        self.contralateral_mask = self.load_mask(scans_path, working_path, 'contralateral_mask.npy')
         self.roi_mask = self.get_roi_mask()
         self.t1_qmap = self.get_qmaps(self.t1_path)
         self.t2_qmap = self.get_qmaps(self.t2_path)
@@ -45,7 +50,8 @@ class Inputs:
                 'T2ms': self.t2_qmap,
                 'T1ms': self.t1_qmap,
                 'MT_data': self.mt_map,
-                'AMIDE_data': self.amide_map,  # TODO: Alex's code has AMIDE_data hardcoded, change when possible
+                'rNOE_data': self.rnoe_map,
+                'AMIDE_data': self.amide_map,
                 'white_mask': xr.DataArray(np.zeros(self.roi_mask.shape), dims=("height", "slice", "width")),
                 'gray_mask': xr.DataArray(np.zeros(self.roi_mask.shape), dims=("height", "slice", "width"))
             }.items() if value is not None})
@@ -76,14 +82,26 @@ class Inputs:
         mrf_data = np.expand_dims(mrf_data, axis=2)  # Add a new axis to the array
         return xr.DataArray(mrf_data, dims=("MRF_cycles", "height", "slice", "width"))
 
-    def load_brain_mask(self) -> np.array:
+    def load_mask(self, scans_path: Path, working_path: Path, mask_name: str) -> np.array:
         """
-        Load the brain mask
-        :return: Brain mask
+        Load the desired mask
+        :return: Brain/tumor/contralateral mask
         """
-        brain_mask = np.load(self.subject.parent.parent / "results" / self.name / "brain_mask.npy").astype(float)
-        brain_mask = cv2.resize(brain_mask, (64, 64), interpolation=cv2.INTER_NEAREST)
-        return brain_mask
+        mask_path = scans_path.parent.parent / "results" / working_path / mask_name
+        if not mask_path.exists():
+            raise FileNotFoundError(f"Mask file not found at {mask_path}")
+
+        if ".npy" in mask_name:
+            mask = np.load(mask_path).astype(float)
+        elif ".dcm" in mask_name:
+            mask = pydicom.dcmread(mask_path).pixel_array
+            np.save(scans_path.parent.parent / "results" / working_path / f'{mask_name.split(".")[0]}.npy', mask)
+        else:
+            raise ValueError(f"Unsupported mask file format: {mask_name}")
+
+        mask = cv2.resize(mask, (64, 64), interpolation=cv2.INTER_NEAREST)
+
+        return mask
 
     def get_roi_mask(self) -> xr.DataArray:
         """
@@ -93,43 +111,6 @@ class Inputs:
         roi_mask = np.ma.masked_equal(self.brain_mask, 0.).filled(np.nan)  # Changes mask from boolean to 1./nan
         roi_mask = np.expand_dims(roi_mask, axis=1)  # Add a new axis to the array
         return xr.DataArray(roi_mask, dims=("height", "slice", "width"))
-
-    def parse_scan_doc(self) -> {str: {str: str}}:
-        """
-        Given a subject path, find the scan_doc.csv file and parse it into a dictionary.
-        specifically, create a dictionary with the following keys:
-        'subject_path': {
-            't1map_number': str,
-            't2map_number': str,
-            'b0map_number': str,
-            'b1map_number': str,
-            'mt_number': str,
-            'rNOE_number': str
-            }
-        The scan_doc.csv file should have the following format:
-        'export_idx','scan category','scan name','scan duration','scan dim'
-        and the inner dictionary should be created by parsing the 'scan name' column in this manner:
-        'scan name' == 't1_map' -> 'export_idx' == 't1map_number'
-        'scan name' == 't2_map' -> 'export_idx' == 't2map_number'
-        'scan name' == 'wasser' -> 'export_idx' == 'b0map_number'
-        'scan name' == 'B1map' -> 'export_idx' == 'b1map_number'
-        'scan name' == '52_MT' -> 'export_idx' == 'mt_number'
-        'scan name' == '51_rnoe' -> 'export_idx' == 'rNOE_number'
-        :return: dictionary of subject scan metadata
-        """
-        scan_doc_path = self.subject / 'scan_doc.csv'
-        with open(scan_doc_path, 'r') as file:
-            scan_doc = {line.split(',')[2]: line.split(',')[0] for line in file}
-            subject_metadata = {
-                't1map_number': scan_doc.get('t1_map', None),
-                't2map_number': scan_doc.get('t2_map', None),
-                'b0map_number': scan_doc.get('wasser', None),
-                'b1map_number': scan_doc.get('B1map', None),
-                'mt_number': scan_doc.get('52_MT', None),
-                'rNOE_number': scan_doc.get('51_rnoe', None),
-                'amide_number': scan_doc.get('51_Amide', None)
-            }
-        return subject_metadata
 
     def extract_values_from_method_file(self, lines, start_index):
         """

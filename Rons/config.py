@@ -1,6 +1,6 @@
 import jax.numpy as jnp
 from dataclasses import dataclass
-from inputs import Inputs
+from micedata import MiceData
 from xarray import Dataset
 from pathlib import Path
 import data
@@ -80,7 +80,7 @@ class TrainingConfig:
 
 @dataclass
 class DataConfig:
-    def __init__(self, name: str, data_cutout: Dataset, inpt: Inputs, figs_path: Path):
+    def __init__(self, name: str, data_cutout: Dataset, inpt: MiceData, figs_path: Path):
         self.name = name
 
         if self.name == 'MT':
@@ -90,13 +90,20 @@ class DataConfig:
             self.scope = 'mt'
             self.ppm = -2.5
             self.T2 = 0.04
-        else:
+        elif self.name == 'Amide':
             self.pool = 'b'
             self.f_scale_fact = 1.2 / 100
             self.k_scale_fact = 400
             self.scope = 'amide'
             self.ppm = 3.5
             self.T2 = 1
+        elif self.name == 'rNOE':
+            self.pool = 'b'
+            self.f_scale_fact = 3.5 / 100
+            self.k_scale_fact = 25
+            self.scope = 'amide'
+            self.ppm = -3.5
+            self.T2 = 5
 
         self.data_feed = self.create_data_feed(data_cutout, inpt)
         self.f_lims = [0, self.f_scale_fact * 100]
@@ -114,7 +121,7 @@ class DataConfig:
         self.labels = None
         self.cov_nnpred_scaled = None
 
-    def create_data_feed(self, data_cutout: Dataset, inpt: Inputs):
+    def create_data_feed(self, data_cutout: Dataset, inpt: MiceData):
         if self.scope == 'mt': # TODO: this hack doesn't work atm, still need to manually change on data.py
             data.wc_ppm_DEF = self.ppm  # MT
             data.T2c_ms_DEF = self.T2  # for MT
