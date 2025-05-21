@@ -14,10 +14,6 @@ from b1_mapping import calculate_b1_map
 
 class MiceData:
     def __init__(self, scans_path: Path, working_path: Path):
-        # self.name = name
-        # self.output_dir = output_dir
-        # self.name = f"{self.cage}_{self.marking}"
-        # self.working_path = f"{self.name}_{self.date.date()}"
         self.scans_metadata = parse_scan_doc(scans_path)
         self.t1_path = scans_path / f'{self.scans_metadata["t1map_number"]}'
         self.t2_path = scans_path / f'{self.scans_metadata["t2map_number"]}'

@@ -53,7 +53,7 @@ pipeline_config = PipelineConfig()
 def run_train(
     brain2train_mt, brain2train_amide=None, train_config=None, infer_config=None,  # drop_first=False,
     mt_sim_mode='isar2_c', do_amide=True, mode='self_supervised',
-    ckpt_folder='ckpts', ckptsfx='', logger=None
+    ckpt_folder='ckpts', ckptsfx='', solute_name='amide', logger=None
 ):
     """ Main training function
     """
@@ -76,7 +76,7 @@ def run_train(
     t1 = time.time()
     if not os.path.exists(ckpt_folder):
         os.makedirs(ckpt_folder)
-    np.save(f'{ckpt_folder}/mt{ckptsfx}_loss_trend', np.array(loss_trend_mt))
+    np.save(f'{ckpt_folder}/MT{ckptsfx}_loss_trend', np.array(loss_trend_mt))
     predictor_mt = net.state2predictor(model_state)
     tc_dict = asdict(train.train_config)
     tc_dict = {k: v for k, v in tc_dict.items() if type(v) != str}  # WA jax bug
@@ -85,7 +85,7 @@ def run_train(
     net.save_ckpt(
         model_state,
         config={'train_cfg': tc_dict, 'net_cfg': net_kwargs},
-        folder=f'{ckpt_folder}/mt{ckptsfx}/',
+        folder=f'{ckpt_folder}/MT{ckptsfx}/',
         step=666)  # just a stub, need to upgrade by extracting correct step number
 
     if do_amide:
@@ -106,20 +106,20 @@ def run_train(
         train.train_config.patience = pipeline_config.amide_patience
 
         t2 = time.time()
-        logger.info("..Starting AMIDE training for..")
+        logger.info(f"..Starting {solute_name} training for..")
         model_state, loss_trend_amide, net_kwargs = \
             train.train(brain2train_amide, model_state=None, pool2predict='b',
                         mode=mode, simulation_mode='expm_bmmat', logger=logger,
                         steps=pipeline_config.amide_steps, lr=pipeline_config.amide_lr)
         t3 = time.time()
-        np.save(f'{ckpt_folder}/amide{ckptsfx}_loss_trend',
+        np.save(f'{ckpt_folder}/{solute_name}{ckptsfx}_loss_trend',
                 np.array(loss_trend_amide))
         tc_dict = asdict(train.train_config)
         tc_dict = {k: v for k, v in tc_dict.items() if type(v) != str}  # WA jax bug
         net.save_ckpt(
             model_state,
             config={'train_cfg': tc_dict, 'net_cfg': net_kwargs},
-            folder=f'{ckpt_folder}/amide{ckptsfx}/',
+            folder=f'{ckpt_folder}/{solute_name}{ckptsfx}/',
             step=666 
         )
         logger.info(

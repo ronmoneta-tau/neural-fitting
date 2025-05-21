@@ -7,7 +7,7 @@ import data
 import simulation
 import pipelines
 import net
-
+import dill
 
 @dataclass
 class SimulationConfig:
@@ -53,7 +53,7 @@ class TrainingConfig:
         self.sigmoid_scale_fac = sigmoid_scale_fac
         self.tp_noise = tp_noise
 
-    def apply(self, mt_data: 'DataConfig', solute_data: 'DataConfig'):
+    def apply(self, *datafeeds: data.SlicesFeed) -> None:
         pipelines.pipeline_config.train_config.std_up_fact = self.std_up_fact
         pipelines.pipeline_config.mt_lr = self.mt_lr
         pipelines.pipeline_config.mt_steps = self.mt_steps
@@ -67,15 +67,9 @@ class TrainingConfig:
         # doesn't learn to predict uncertainty properly. and it defaults to predicting almost constant,
         # large uncertainty values for all pixels
 
-        pipelines.pipeline_config.infer_config.fb_scale_fact = solute_data.f_scale_fact
-        pipelines.pipeline_config.infer_config.kb_scale_fact = solute_data.k_scale_fact
-        pipelines.pipeline_config.infer_config.fc_scale_fact = mt_data.f_scale_fact
-        pipelines.pipeline_config.infer_config.kc_scale_fact = mt_data.k_scale_fact
-
-        mt_data.data_feed.ds = 1
-        mt_data.data_feed.slw = 1
-        solute_data.data_feed.ds = 1
-        solute_data.data_feed.slw = 1
+        for data_feed in datafeeds:
+            data_feed.ds = 1
+            data_feed.slw = 1
 
 
 @dataclass
@@ -90,6 +84,11 @@ class DataConfig:
             self.scope = 'mt'
             self.ppm = -2.5
             self.T2 = 0.04
+            pipelines.pipeline_config.infer_config.fc_scale_fact = self.f_scale_fact
+            pipelines.pipeline_config.infer_config.kc_scale_fact = self.k_scale_fact
+            data.wc_ppm_DEF = self.ppm
+            data.T2c_ms_DEF = self.T2
+
         elif self.name == 'Amide':
             self.pool = 'b'
             self.f_scale_fact = 1.2 / 100
@@ -97,6 +96,11 @@ class DataConfig:
             self.scope = 'amide'
             self.ppm = 3.5
             self.T2 = 1
+            pipelines.pipeline_config.infer_config.fb_scale_fact = self.f_scale_fact
+            pipelines.pipeline_config.infer_config.kb_scale_fact = self.k_scale_fact
+            data.wb_ppm_DEF = self.ppm
+            data.T2b_ms_DEF = self.T2
+
         elif self.name == 'rNOE':
             self.pool = 'b'
             self.f_scale_fact = 3.5 / 100
@@ -104,6 +108,10 @@ class DataConfig:
             self.scope = 'amide'
             self.ppm = -3.5
             self.T2 = 5
+            pipelines.pipeline_config.infer_config.fb_scale_fact = self.f_scale_fact
+            pipelines.pipeline_config.infer_config.kb_scale_fact = self.k_scale_fact
+            data.wb_ppm_DEF = self.ppm
+            data.T2b_ms_DEF = self.T2
 
         self.data_feed = self.create_data_feed(data_cutout, inpt)
         self.f_lims = [0, self.f_scale_fact * 100]
@@ -121,22 +129,54 @@ class DataConfig:
         self.labels = None
         self.cov_nnpred_scaled = None
 
-    def create_data_feed(self, data_cutout: Dataset, inpt: MiceData):
-        if self.scope == 'mt': # TODO: this hack doesn't work atm, still need to manually change on data.py
-            data.wc_ppm_DEF = self.ppm  # MT
-            data.T2c_ms_DEF = self.T2  # for MT
-        else:
-            data.wb_ppm_DEF = self.ppm
-            data.T2b_ms_DEF = self.T2
-
+    def create_data_feed(self, data_cutout: Dataset, inpt: MiceData) -> data.SlicesFeed:
         return data.SlicesFeed.from_xarray(data_cutout, mt_or_amide=self.scope,
                                            mt_seq_txt_fname=inpt.mt_params_path,
                                            larg_seq_txt_fname=inpt.amide_params_path)
+
+    def apply(self):
+        if self.scope == 'mt':
+            data.wc_ppm_DEF = self.ppm  # MT
+            data.T2c_ms_DEF = self.T2  # for MT
+            pipelines.pipeline_config.infer_config.fc_scale_fact = self.f_scale_fact
+            pipelines.pipeline_config.infer_config.kc_scale_fact = self.k_scale_fact
+
+        else:
+            data.wb_ppm_DEF = self.ppm
+            data.T2b_ms_DEF = self.T2
+            pipelines.pipeline_config.infer_config.fb_scale_fact = self.f_scale_fact
+            pipelines.pipeline_config.infer_config.kb_scale_fact = self.k_scale_fact
 
     def update_ground_truth(self, tissue_param_est: dict):
         self.data_feed.fc_gt_T = tissue_param_est['fc_T']
         self.data_feed.kc_gt_T = tissue_param_est['kc_T']
 
+    def save(self, dir_path: Path) -> None:
+        """
+        Save the DataConfig object to a file.
+        :param dir_path: Path to the folder where the object will be saved.
+        """
+        if not dir_path.exists():
+            dir_path.mkdir(parents=True, exist_ok=True)
+
+        file_path = dir_path / f"{self.name}_data_config.pkl"
+        with open(file_path, 'wb') as f:
+            dill.dump(self, f)
+
+        print(f"DataConfig object saved to {file_path}")
+
+    @staticmethod
+    def load(file_path: Path) -> 'DataConfig':
+        """
+        Load a DataConfig object from a file.
+        :param file_path: Path to the file from which the object will be loaded.
+        :return: The loaded DataConfig object.
+        """
+        with open(file_path, 'rb') as f:
+            obj = dill.load(f)
+        obj.apply()
+        print(f"DataConfig object loaded from {file_path}")
+        return obj
 
 @dataclass
 class ROIConfig:

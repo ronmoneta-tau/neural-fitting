@@ -1,13 +1,18 @@
+import argparse
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
 import os
 import matplotlib.patches as patches
+import pandas as pd
 from matplotlib.patches import Ellipse, Patch
-from inputs import Inputs
+import net
+from Rons.Experiment import Experiment
+from micedata import MiceData
 from pathlib import Path
 import matplotlib.colors as mcolors
 from xarray import Dataset
+from Parsers import parse_arguments, parse_input_file
 
 sys.path.append(str(os.getcwd()))
 from config import SimulationConfig, DataConfig, TrainingConfig, ROIConfig
@@ -36,24 +41,26 @@ def cutout_dataset(dataset: Dataset, cutout_height: slice, cutout_width: slice) 
     return data_xa_cutout
 
 
-def train_pipeline(mt_data: DataConfig, solute_data: DataConfig) -> tuple:
+def train_pipeline(mt_data: DataConfig, solute_data: DataConfig, checkpoints_path: Path) -> tuple:
     """
     Train the model using the given data.
     Args:
         mt_data (DataConfig): The MT data configuration.
         solute_data (DataConfig): The solute data configuration.
+        checkpoints_path (Path): The output directory for saving the model.
     Returns:
         tuple: The trained predictors for MT and solute data.    
     """
     training_config = TrainingConfig()
-    training_config.apply(mt_data, solute_data)
+    training_config.apply(mt_data.data_feed, solute_data.data_feed)
 
     predictor_mt, predictor_amide = pipelines.run_train(
         brain2train_mt=mt_data.data_feed,
         brain2train_amide=solute_data.data_feed,
-        ckpt_folder=os.path.abspath(f'./goo'),
+        ckpt_folder=checkpoints_path.absolute(),
         # do_amide=False,
-        mt_sim_mode='expm_bmmat'
+        mt_sim_mode='expm_bmmat',
+        solute_name = solute_data.name
     )
 
     return predictor_mt, predictor_amide
@@ -253,14 +260,14 @@ def compute_limits_from_corners(ellipses: list, margin: float = 0.05) -> tuple:
     return (xmin, xmax), (ymin, ymax)
 
 
-def create_uncertainty_maps(solute_data: DataConfig, roi_config: ROIConfig, inpt: Inputs,
+def create_uncertainty_maps(solute_data: DataConfig, roi_config: ROIConfig, mice_data: MiceData,
                             auxiliary_mt_data: DataConfig = None, sli: int = 0) -> None:
     """
     Create uncertainty maps for the given solute data and ROI configuration.
     Args:
         solute_data (DataConfig): The solute data configuration. can be MT or Solute.
         roi_config (ROIConfig): The ROI configuration.
-        inpt (Inputs): The input configuration.
+        mice_data (MiceData): The Mice data configuration.
         auxiliary_mt_data (DataConfig, optional): The auxiliary MT data configuration.Needed only for Solute usage. otherwise defaults to None.
         sli (int, optional): The slice index to use for the uncertainty maps. Defaults to 0.
     """
@@ -274,8 +281,8 @@ def create_uncertainty_maps(solute_data: DataConfig, roi_config: ROIConfig, inpt
                 auxiliary_mt_data.data_feed, auxiliary_mt_data.tissue_param_est,
                 data_feed_amide=solute_data.data_feed, amide=True,
                 loc_dict_res=100, max_f_mt=.2, max_k_mt=140, max_f_amide=0.01, max_k_amide=400,
-                mt_sim_mode='expm_bmmat', do_plot=False, mt_seq_txt_fname=inpt.mt_params_path,
-                larg_seq_txt_fname=inpt.amide_params_path
+                mt_sim_mode='expm_bmmat', do_plot=False, mt_seq_txt_fname=mice_data.mt_params_path,
+                larg_seq_txt_fname=mice_data.amide_params_path
             )
         else:
             f_best_dotprod, k_best_dotprod, nrmse, _df, _dk = au.get_nrmse_grid(
@@ -283,7 +290,7 @@ def create_uncertainty_maps(solute_data: DataConfig, roi_config: ROIConfig, inpt
                 solute_data.data_feed, solute_data.tissue_param_est,
                 data_feed_amide=None, amide=False, mt_sim_mode='expm_bmmat', do_plot=False,
                 loc_dict_res=100, max_f_mt=.2, max_k_mt=140,
-                mt_seq_txt_fname=inpt.mt_params_path, larg_seq_txt_fname=inpt.amide_params_path
+                mt_seq_txt_fname=mice_data.mt_params_path, larg_seq_txt_fname=mice_data.amide_params_path
             )
 
         maha1, maha2, posterior_cov, CR_area, CIk_x_CIf = au.viz_posteriors(
@@ -305,39 +312,155 @@ def create_uncertainty_maps(solute_data: DataConfig, roi_config: ROIConfig, inpt
         plt.show()
 
 
+# def statistical_analysis(experiments_list: [DataConfig], context: str, figs_path: Path) -> None:
+#     """
+#     Perform statistical analysis on the data for tumor and contralateral ROIs.
+#     Args:
+#         experiments_list ([DataConfig]): List of experiments.
+#         context (str): Pipeline context.
+#         figs_path (Path): Path to save the figures.
+#     """
+#     days_post = [5, 12, 19, 26]
+#     stats = process_maps_for_statistics(experiments_list, context, figs_path, days_post)
+#
+#     control = pd.concat([stats[stats['cage'] == 'C1'], stats[stats['cage'] == 'C3']])
+#     treatment = pd.concat([stats[stats['cage'] == 'C2'], stats[stats['cage'] == 'C4']])
+#     control.drop('cage', axis='columns', inplace=True)
+#     treatment.drop('cage', axis='columns', inplace=True)
+#
+#     create_boxplot(control, "Control", args.output_dir)
+#     create_boxplot(treatment, "Treatment", args.output_dir)
+#     create_joined_boxplot((control, "Control"), (treatment, "Treatment"), output_dir=args.output_dir)
+#
+#
+# def process_maps_for_statistics(experiments_list: [DataConfig], context: str, output_dir: Path, days_post: list[int]) -> pd.DataFrame:
+#     """
+#     Process the inference maps for statistical analysis.
+#     Produces a dataframe of rows of day, measurement, ROI, average value
+#     :param experiments_list: List of experiments
+#     :param context: Pipeline context
+#     :param output_dir: Path to the output directory
+#     :param days_post: List of days post tumor inoculation
+#     :return: Dataframe of data_per_day
+#     """
+#     data_rows = []
+#
+#     for exp in experiments_list:
+#         scan_day = int(exp.date.date().day)
+#         day_post = min(days_post, key=lambda x: abs(x - scan_day))  # finds the closest day
+#
+#         maps = {
+#             'fs': exp.f_values * 100,
+#             'ksw': exp.k_values
+#         }
+#
+#         for key, value_map in maps.items():
+#
+#             masked_tumor = value_map * exp.tumor_mask
+#             masked_contralateral = value_map * exp.contralateral_mask
+#
+#             # Append data to rows (for DataFrame)
+#             data_rows.append({
+#                 'name': exp.name,
+#                 'cage': exp.cage,
+#                 'day': day_post,
+#                 'measurement': key,
+#                 'region': 'tumor',
+#                 'value': np.mean(masked_tumor[masked_tumor > 0])
+#             })
+#             data_rows.append({
+#                 'name': exp.name,
+#                 'cage': exp.cage,
+#                 'day': day_post,
+#                 'measurement': key,
+#                 'region': 'contralateral',
+#                 'value': np.mean(masked_contralateral[masked_contralateral > 0])
+#             })
+#
+#     # Convert to DataFrame
+#     df = pd.DataFrame(data_rows)
+#
+#     return df
+
+def learning_pipeline(args: argparse.Namespace, experiments: list[Experiment]) -> None:
+    """
+    Based on given flags, run training and/or inference for MT and the wanted solutes.
+    """
+    for exp in experiments:
+        print(f"Running experiment: {exp.name}")
+        local_output_dir = args.output_dir/exp.working_path
+        local_output_dir.mkdir(parents=True, exist_ok=True)
+        print(f"Saving results in {local_output_dir}\n")
+
+        figs_path = Path(f'{local_output_dir}/figures')
+        figs_path.mkdir(parents=True, exist_ok=True)
+
+        checkpoints_path = Path(f'{local_output_dir}/checkpoints')
+        checkpoints_path.mkdir(parents=True, exist_ok=True)
+
+
+        data_xa_cutout = cutout_dataset(exp.data.dataset, cutout_height=slice(18, 42), cutout_width=slice(17, 50))
+        mt_data = DataConfig('MT', data_xa_cutout, exp.data, figs_path)
+        for solute in args.solutes:
+            print(f"Running pipeline for {solute}..")
+            solute_data = DataConfig(solute, data_xa_cutout, exp.data, figs_path)
+
+            if args.train:
+                print(f"Running training..")
+                mt_data.predictor, solute_data.predictor = train_pipeline(mt_data, solute_data, checkpoints_path)
+
+            if args.inference:
+                print(f"Running inference..")
+                if not args.train:
+                    mt_data.predictor = net.load_ckpt(folder=checkpoints_path.absolute() / 'MT')[0]
+                    solute_data.predictor = net.load_ckpt(folder=checkpoints_path.absolute() / solute)[0]
+                    infer.infer_config = pipelines.pipeline_config.infer_config
+
+                mt_data.tissue_param_est, mt_data.pred_signal_normed_np = inference_pipeline(mt_data)
+                mt_data.save(checkpoints_path)
+                plot_tissue_params_and_error(mt_data)
+
+                solute_data.update_ground_truth(mt_data.tissue_param_est)
+                solute_data.tissue_param_est, solute_data.pred_signal_normed_np = inference_pipeline(solute_data)
+                solute_data.save(checkpoints_path)
+                plot_tissue_params_and_error(solute_data)
+
+
+def uncertainty_pipeline(args: argparse.Namespace, experiments: list[Experiment]) -> None:
+    for exp in experiments:
+        print(f"Running experiment: {exp.name}")
+        local_output_dir = args.output_dir / exp.working_path
+        checkpoints_path = Path(f'{local_output_dir}/checkpoints')
+        training_config = TrainingConfig()
+        roi_config = ROIConfig()
+
+        mt_data = DataConfig.load(checkpoints_path / f"MT_data_config.pkl")
+        training_config.apply(mt_data.data_feed)
+
+        create_bound_maps(mt_data, roi_config)
+        create_ROIs_uncertainty_maps(mt_data, roi_config)
+        create_uncertainty_maps(mt_data, roi_config, exp.data, auxiliary_mt_data=None)
+
+        for solute in args.solutes:
+            solute_data = DataConfig.load(checkpoints_path / f"{solute}_data_config.pkl")
+            training_config.apply(solute_data.data_feed)
+
+            create_bound_maps(solute_data, roi_config)
+            create_ROIs_uncertainty_maps(solute_data, roi_config)
+            create_uncertainty_maps(solute_data, roi_config, exp.data, auxiliary_mt_data=mt_data)
+
+
 def main():
     simulation_config = SimulationConfig()
     simulation_config.apply()
-    inpt = Inputs(Path('/home/ron/pediatric-tumor-mice/Pediatric tumor model_Nov2024/20241120_134917_OrPerlman_ped_tumor_immuno_C3_2R_5_1_3'),
-                  "C3_2R_2024-11-20")
-    data_xa_cutout = cutout_dataset(inpt.dataset, cutout_height=slice(18, 42), cutout_width=slice(17, 50))
 
-    figs_path = Path('./figs')
-    figs_path.mkdir(parents=True, exist_ok=True)
-    print(f"Saving figures in {figs_path.absolute()}\n")
+    args = parse_arguments()
+    experiments = [Experiment(path, args.output_dir) for path in parse_input_file(args.input_file)]
 
-    mt_data = DataConfig('MT', data_xa_cutout, inpt, figs_path)
-    amide_data = DataConfig('Amide', data_xa_cutout, inpt, figs_path)
-
-    mt_data.predictor, amide_data.predictor = train_pipeline(mt_data, amide_data)
-
-    mt_data.tissue_param_est, mt_data.pred_signal_normed_np = inference_pipeline(mt_data)
-    amide_data.update_ground_truth(mt_data.tissue_param_est)
-    amide_data.tissue_param_est, amide_data.pred_signal_normed_np = inference_pipeline(amide_data)
-
-    plot_tissue_params_and_error(mt_data)
-    plot_tissue_params_and_error(amide_data)
-
-    roi_config = ROIConfig()
-
-    create_bound_maps(mt_data, roi_config)
-    create_bound_maps(amide_data, roi_config)
-
-    create_ROIs_uncertainty_maps(mt_data, roi_config)
-    create_ROIs_uncertainty_maps(amide_data, roi_config)
-
-    create_uncertainty_maps(mt_data, roi_config, inpt, auxiliary_mt_data=None)
-    create_uncertainty_maps(amide_data, roi_config, inpt, auxiliary_mt_data=mt_data)
+    if args.train or args.inference:
+        learning_pipeline(args, experiments)
+    if args.uncertainty:
+        uncertainty_pipeline(args, experiments)
 
 
 if __name__ == "__main__":
