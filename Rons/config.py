@@ -3,11 +3,10 @@ from dataclasses import dataclass
 from micedata import MiceData
 from xarray import Dataset
 from pathlib import Path
-import data
-import simulation
-import pipelines
-import net
+import sys
 import dill
+sys.path.append(str(Path.cwd().parent))
+import data, simulation, pipelines, net
 
 @dataclass
 class SimulationConfig:

@@ -2,21 +2,19 @@ import argparse
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
-import os
 import matplotlib.patches as patches
 import pandas as pd
 from matplotlib.patches import Ellipse, Patch
-import net
-from Rons.Experiment import Experiment
+from Experiment import Experiment
 from micedata import MiceData
 from pathlib import Path
 import matplotlib.colors as mcolors
 from xarray import Dataset
 from Parsers import parse_arguments, parse_input_file
 
-sys.path.append(str(os.getcwd()))
+sys.path.append(str(Path.cwd().parent))
 from config import SimulationConfig, DataConfig, TrainingConfig, ROIConfig
-import data, pipelines, utils, infer
+import data, pipelines, utils, infer, net
 import analyze_uncertainty as au
 
 

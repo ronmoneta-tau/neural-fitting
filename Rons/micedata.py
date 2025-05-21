@@ -6,7 +6,7 @@ import pydicom
 import os
 import cv2
 from pathlib import Path
-from Rons.Parsers import parse_scan_doc
+from Parsers import parse_scan_doc
 from get_paravision_t1_t2_map_ms import get_paravision_map_ms
 from b0_mapping_functions import z_spec_rearranger, wassr_b0_mapping
 from b1_mapping import calculate_b1_map

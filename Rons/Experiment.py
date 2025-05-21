@@ -6,7 +6,7 @@ from typing import Union, Any
 import numpy as np
 import scipy.io as sio
 
-from Rons.micedata import MiceData
+from micedata import MiceData
 
 IRREGULAR_PATHS = {'20241106_080713_OrPerlman_ped_tumor_immuno_1_baseline_1_1': {'cage': 'FALSE', 'marking': 'FALSE'},
                    '20241106_082248_OrPerlman_ped_tumor_immuno_right1_baseline_1_1': {'cage': 'C1', 'marking': '1R'},
