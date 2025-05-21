@@ -237,7 +237,7 @@ class SlicesFeed(torch.utils.data.Dataset):
             shape = [99, 40, 100]
             parameter_values_od = def_grids4cartesian
         grids = np.meshgrid(*parameter_values_od.values(), indexing='ij')
-        print(grids[0].shape)
+        # print(grids[0].shape)
 
         tp_d = {name: grid.ravel().reshape([shape[0], -1, shape[2]])[:, slices[0]:slices[1],:]    # [:, :shape[1],:] 
                 for name, grid in zip(parameter_values_od.keys(), grids)

@@ -200,9 +200,11 @@ class MiceData:
         echos = self.get_orderd_DICOM_files(self.b1_path)
 
         if len(echos) < 2:
-            raise ValueError("Not enough images found for B1 mapping.")
+            print(ValueError("Not enough images found for B1 mapping. Assuming perfect B1 homogeneity."))
+            return xr.DataArray(np.ones((64,1,64), dtype=np.float32), dims=("height", "slice", "width"))
         if len(echos) > 2:
-            raise ValueError("Too many images found for B1 mapping.")
+            print(ValueError("Too many images found for B1 mapping. Assuming perfect B1 homogeneity."))
+            return xr.DataArray(np.ones((64, 1, 64), dtype=np.float32), dims=("height", "slice", "width"))
 
         b1_map = calculate_b1_map(echos[0], echos[1], brain_mask=self.brain_mask, alpha1_deg=30, alpha2_deg=60)
 

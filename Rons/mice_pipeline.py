@@ -20,17 +20,24 @@ import data, pipelines, utils, infer
 import analyze_uncertainty as au
 
 
-def cutout_dataset(dataset: Dataset, cutout_height: slice, cutout_width: slice) -> Dataset:
+def cutout_dataset(mice_data: MiceData) -> Dataset:
     """
     Cut out a specific region from the dataset.
     Args:
-        dataset (Dataset): The input dataset.
-        cutout_height (slice): The slice object for the height dimension.
-        cutout_width (slice): The slice object for the width dimension.
+        mice_data (MiceData): The MiceData.
     Returns:
         Dataset: The cutout dataset.
     """
-    data_xa_cutout = dataset.isel(height=cutout_height, width=cutout_width)
+    non_nan_indices = np.argwhere(~np.isnan(mice_data.roi_mask[:, 0, :].values))
+    min_height, min_width = non_nan_indices.min(axis=0)
+    max_height, max_width = non_nan_indices.max(axis=0)
+
+    # Create slices for the cutout
+    cutout_height = slice(min_height - 2, max_height + 2)
+    cutout_width = slice(min_width - 2, max_width + 2)
+
+    # Perform the cutout
+    data_xa_cutout = mice_data.dataset.isel(height=cutout_height, width=cutout_width)
 
     plt.figure(figsize=(4, 4))
     plt.imshow((data_xa_cutout['T1ms'].data * data_xa_cutout['roi_mask_nans']).squeeze())
@@ -106,7 +113,7 @@ def plot_tissue_params_and_error(solute_data: DataConfig) -> None:
 
     err, norm = calculate_error_map(solute_data.data_feed, solute_data.pred_signal_normed_np)
 
-    cmap_nrmse = plt.cm.get_cmap("YlOrRd").copy()
+    cmap_nrmse = plt.colormaps.get_cmap("YlOrRd").copy()
     cmap_nrmse.set_bad('1.0')
     img0 = plt.imshow(err[:, 0, :], norm=norm, cmap=cmap_nrmse)  # 'hot_r'); # plt.colorbar(img0)  # vmin=0, vmax=0.1,
     cbar = plt.colorbar(img0)
@@ -307,7 +314,6 @@ def create_uncertainty_maps(solute_data: DataConfig, roi_config: ROIConfig, mice
         plt.suptitle(
             f'{solute_data.name} posterior distribution\n{roi_name} Point: ({_x},{_y}). CR_area: {CR_area:.2f}',
             fontsize=16)
-        plt.tight_layout()
         plt.savefig(f'{maps_path}/{solute_data.name}_posterior_pics_ind{jj}_{_x}_{_z}_{_y}.png', dpi=200)
         plt.show()
 
@@ -382,72 +388,69 @@ def create_uncertainty_maps(solute_data: DataConfig, roi_config: ROIConfig, mice
 #
 #     return df
 
-def learning_pipeline(args: argparse.Namespace, experiments: list[Experiment]) -> None:
+def learning_pipeline(args: argparse.Namespace, exp: Experiment) -> None:
     """
     Based on given flags, run training and/or inference for MT and the wanted solutes.
     """
-    for exp in experiments:
-        print(f"Running experiment: {exp.name}")
-        local_output_dir = args.output_dir/exp.working_path
-        local_output_dir.mkdir(parents=True, exist_ok=True)
-        print(f"Saving results in {local_output_dir}\n")
+    local_output_dir = args.output_dir/exp.working_path
+    local_output_dir.mkdir(parents=True, exist_ok=True)
+    print(f"Saving results in {local_output_dir}\n")
 
-        figs_path = Path(f'{local_output_dir}/figures')
-        figs_path.mkdir(parents=True, exist_ok=True)
+    figs_path = Path(f'{local_output_dir}/figures')
+    figs_path.mkdir(parents=True, exist_ok=True)
 
-        checkpoints_path = Path(f'{local_output_dir}/checkpoints')
-        checkpoints_path.mkdir(parents=True, exist_ok=True)
+    checkpoints_path = Path(f'{local_output_dir}/checkpoints')
+    checkpoints_path.mkdir(parents=True, exist_ok=True)
 
 
-        data_xa_cutout = cutout_dataset(exp.data.dataset, cutout_height=slice(18, 42), cutout_width=slice(17, 50))
-        mt_data = DataConfig('MT', data_xa_cutout, exp.data, figs_path)
-        for solute in args.solutes:
-            print(f"Running pipeline for {solute}..")
-            solute_data = DataConfig(solute, data_xa_cutout, exp.data, figs_path)
+    data_xa_cutout = cutout_dataset(exp.data)
+    mt_data = DataConfig('MT', data_xa_cutout, exp.data, figs_path)
+    for solute in args.solutes:
+        print(f"Running pipeline for {solute}..\n")
+        solute_data = DataConfig(solute, data_xa_cutout, exp.data, figs_path)
 
-            if args.train:
-                print(f"Running training..")
-                mt_data.predictor, solute_data.predictor = train_pipeline(mt_data, solute_data, checkpoints_path)
+        if args.train:
+            print(f"Running training..")
+            mt_data.predictor, solute_data.predictor = train_pipeline(mt_data, solute_data, checkpoints_path)
 
-            if args.inference:
-                print(f"Running inference..")
-                if not args.train:
-                    mt_data.predictor = net.load_ckpt(folder=checkpoints_path.absolute() / 'MT')[0]
-                    solute_data.predictor = net.load_ckpt(folder=checkpoints_path.absolute() / solute)[0]
-                    infer.infer_config = pipelines.pipeline_config.infer_config
+        if args.inference:
+            print(f"Running inference..")
+            if not args.train:
+                mt_data.predictor = net.load_ckpt(folder=checkpoints_path.absolute() / 'MT')[0]
+                solute_data.predictor = net.load_ckpt(folder=checkpoints_path.absolute() / solute)[0]
+                infer.infer_config = pipelines.pipeline_config.infer_config
 
-                mt_data.tissue_param_est, mt_data.pred_signal_normed_np = inference_pipeline(mt_data)
-                mt_data.save(checkpoints_path)
-                plot_tissue_params_and_error(mt_data)
+            mt_data.tissue_param_est, mt_data.pred_signal_normed_np = inference_pipeline(mt_data)
+            mt_data.save(checkpoints_path)
+            plot_tissue_params_and_error(mt_data)
 
-                solute_data.update_ground_truth(mt_data.tissue_param_est)
-                solute_data.tissue_param_est, solute_data.pred_signal_normed_np = inference_pipeline(solute_data)
-                solute_data.save(checkpoints_path)
-                plot_tissue_params_and_error(solute_data)
+            solute_data.update_ground_truth(mt_data.tissue_param_est)
+            solute_data.tissue_param_est, solute_data.pred_signal_normed_np = inference_pipeline(solute_data)
+            solute_data.save(checkpoints_path)
+            plot_tissue_params_and_error(solute_data)
 
 
-def uncertainty_pipeline(args: argparse.Namespace, experiments: list[Experiment]) -> None:
-    for exp in experiments:
-        print(f"Running experiment: {exp.name}")
-        local_output_dir = args.output_dir / exp.working_path
-        checkpoints_path = Path(f'{local_output_dir}/checkpoints')
-        training_config = TrainingConfig()
-        roi_config = ROIConfig()
+def uncertainty_pipeline(args: argparse.Namespace, exp: Experiment) -> None:
+    print(f"\nRunning experiment: {exp.name}")
+    local_output_dir = args.output_dir / exp.working_path
+    checkpoints_path = Path(f'{local_output_dir}/checkpoints')
+    training_config = TrainingConfig()
+    roi_config = ROIConfig()
 
-        mt_data = DataConfig.load(checkpoints_path / f"MT_data_config.pkl")
-        training_config.apply(mt_data.data_feed)
+    mt_data = DataConfig.load(checkpoints_path / f"MT_data_config.pkl")
+    training_config.apply(mt_data.data_feed)
 
-        create_bound_maps(mt_data, roi_config)
-        create_ROIs_uncertainty_maps(mt_data, roi_config)
-        create_uncertainty_maps(mt_data, roi_config, exp.data, auxiliary_mt_data=None)
+    create_bound_maps(mt_data, roi_config)
+    create_ROIs_uncertainty_maps(mt_data, roi_config)
+    create_uncertainty_maps(mt_data, roi_config, exp.data, auxiliary_mt_data=None)
 
-        for solute in args.solutes:
-            solute_data = DataConfig.load(checkpoints_path / f"{solute}_data_config.pkl")
-            training_config.apply(solute_data.data_feed)
+    for solute in args.solutes:
+        solute_data = DataConfig.load(checkpoints_path / f"{solute}_data_config.pkl")
+        training_config.apply(solute_data.data_feed)
 
-            create_bound_maps(solute_data, roi_config)
-            create_ROIs_uncertainty_maps(solute_data, roi_config)
-            create_uncertainty_maps(solute_data, roi_config, exp.data, auxiliary_mt_data=mt_data)
+        create_bound_maps(solute_data, roi_config)
+        create_ROIs_uncertainty_maps(solute_data, roi_config)
+        create_uncertainty_maps(solute_data, roi_config, exp.data, auxiliary_mt_data=mt_data)
 
 
 def main():
@@ -456,11 +459,13 @@ def main():
 
     args = parse_arguments()
     experiments = [Experiment(path, args.output_dir) for path in parse_input_file(args.input_file)]
+    for exp in experiments:
+        print(f"Running experiment: {exp.name}")
 
-    if args.train or args.inference:
-        learning_pipeline(args, experiments)
-    if args.uncertainty:
-        uncertainty_pipeline(args, experiments)
+        if args.train or args.inference:
+            learning_pipeline(args, exp)
+        if args.uncertainty:
+            uncertainty_pipeline(args, exp)
 
 
 if __name__ == "__main__":

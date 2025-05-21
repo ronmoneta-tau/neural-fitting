@@ -30,6 +30,7 @@ class Experiment:
         self.name = f"{self.cage}_{self.marking}"
         self.working_path = Path(f"{self.name}_{self.date.date()}")
         self.data = MiceData(self.scans_path, self.working_path)
+        print(f"Experiment {self.working_path} with path: {self.scans_path} created.\n")
 
     def extract_folder_info(self) -> tuple[datetime, Union[str, Any], Union[str, Any]]:
         """

@@ -80,7 +80,7 @@ class DataConfig:
         if self.name == 'MT':
             self.pool = 'c'
             self.f_scale_fact = 30 / 100
-            self.k_scale_fact = 150
+            self.k_scale_fact = 102
             self.scope = 'mt'
             self.ppm = -2.5
             self.T2 = 0.04
@@ -103,7 +103,7 @@ class DataConfig:
 
         elif self.name == 'rNOE':
             self.pool = 'b'
-            self.f_scale_fact = 3.5 / 100
+            self.f_scale_fact = 2 / 100
             self.k_scale_fact = 25
             self.scope = 'amide'
             self.ppm = -3.5
@@ -163,7 +163,7 @@ class DataConfig:
         with open(file_path, 'wb') as f:
             dill.dump(self, f)
 
-        print(f"DataConfig object saved to {file_path}")
+        print(f"DataConfig object saved to {file_path}\n")
 
     @staticmethod
     def load(file_path: Path) -> 'DataConfig':
@@ -175,7 +175,7 @@ class DataConfig:
         with open(file_path, 'rb') as f:
             obj = dill.load(f)
         obj.apply()
-        print(f"DataConfig object loaded from {file_path}")
+        print(f"DataConfig object loaded from {file_path}\n")
         return obj
 
 @dataclass

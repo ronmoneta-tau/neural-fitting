@@ -1,4 +1,3 @@
-import time
 import numpy as np
 
 from scipy.interpolate import splev, splrep
@@ -14,7 +13,7 @@ def lorentz_iN(delta, cen, amp, sig, offset):  # delta must be first?
     :param par: [center, amp, sigma, offset]
     :return b0_map:
     """
-    denum = 1 + (sig / (delta - cen)) ** 2
+    denum = 1 + (sig / (delta - cen + 1e-12)) ** 2
     # y_fit = np.sqrt(par[3] ^ 2 + (par[1]] / denum + par[3]) ** 2)
     y_fit = offset + amp / denum
     # y_fit = sum(sum(abs(np.sqrt(par[3]] + (par[1] / denum) ** 2) - y)))
@@ -55,7 +54,6 @@ def wassr_b0_mapping(Z_Ims_3DMat,
     # Spline interpolation of scanned offsets every 1 Hz
     Interp_w_Hz = np.arange(min(w_Hz), max(w_Hz) + 1, 1)
 
-    start = time.perf_counter()
     for r_ind in range(B0Map.shape[0]):
         for c_ind in range(B0Map.shape[1]):
             # Mapping only if the mask is nonzero in this pixel
@@ -90,8 +88,6 @@ def wassr_b0_mapping(Z_Ims_3DMat,
 
                 B0Map[r_ind, c_ind] = par[0]  # center [Hz]
 
-    end = time.perf_counter()
-    print(f'WASSR B0 mapping took {end - start:.03f} seconds')
     return B0Map
 
 
